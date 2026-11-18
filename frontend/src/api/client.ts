@@ -318,6 +318,8 @@ export interface VagueTask {
 
 // --- Triage ---
 
+export interface TriageCriterion { answer: boolean; evidence: string; evidence_found: boolean | null }
+
 export interface TriageResult {
   email_id: string;
   score: number;
@@ -327,6 +329,11 @@ export interface TriageResult {
   action_type: string;
   reason: string | null;
   suggested_task: string | null;
+  status?: 'evaluated' | 'not_evaluated';
+  important?: 0 | 1 | null;
+  criteria?: string | null;  // JSON string, see TriageCriterion (card #239)
+  prompt_version?: string | null;
+  model?: string | null;
   triage_at: string;
   subject: string;
   sender_name: string;

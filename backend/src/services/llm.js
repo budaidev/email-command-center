@@ -45,10 +45,9 @@ async function isPrimaryAvailable() {
 const _primaryClient = new OpenAI({ baseURL: PRIMARY_BASE_URL, apiKey: PRIMARY_API_KEY, timeout: 300000 });
 const _fallbackClient = new OpenAI({ baseURL: FALLBACK_BASE_URL, apiKey: FALLBACK_API_KEY, timeout: 300000 });
 
-// Primary endpoint runs a thinking model (Qwen-style) on llama.cpp. Left unconstrained,
-// it burns the entire max_tokens budget on reasoning_content and returns empty content.
-// chat_template_kwargs.enable_thinking=false disables that — verified on workpc-1.
-const PRIMARY_EXTRA_BODY = { chat_template_kwargs: { enable_thinking: false } };
+// The primary is LiteLLM (since 2026-11). The old workpc-1 llama.cpp needed
+// chat_template_kwargs.enable_thinking=false; LiteLLM routes need no extra body.
+const PRIMARY_EXTRA_BODY = undefined;
 
 async function getActiveConfig() {
   const usePrimary = await isPrimaryAvailable();
@@ -109,7 +108,7 @@ export async function streamChat(messages, onChunk, options = {}) {
  */
 export async function getJSON(systemPrompt, userMessage, options = {}) {
   const active = await getActiveConfig();
-  const { model = active.model, maxTokens = 1000 } = options;
+  const { model = active.model, maxTokens = 1000, metadata } = options;
 
   // For thinking models (Qwen3, QwQ), reasoning tokens eat into max_tokens budget.
   // Allocate extra headroom so the actual JSON output doesn't get truncated.
@@ -128,6 +127,8 @@ export async function getJSON(systemPrompt, userMessage, options = {}) {
     temperature: 0,
     response_format: { type: 'json_object' },
     ...(active.extraBody || {}),
+    // LiteLLM passes this on to Langfuse (trace_name, tags, trace_metadata, ...).
+    ...(metadata ? { metadata } : {}),
   };
 
   const response = await active.client.chat.completions.create(requestBody);

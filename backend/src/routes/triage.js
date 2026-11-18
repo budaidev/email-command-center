@@ -23,6 +23,7 @@ router.get('/', (req, res, next) => {
     let sql = `
       SELECT t.email_id, t.score, t.rule_score, t.ai_score, t.matched_rules,
              t.action_type, t.reason, t.suggested_task,
+             t.status, t.important, t.criteria, t.prompt_version, t.model,
              t.created_at AS triage_at,
              e.subject, e.sender_name, e.sender_email, e.date, e.snippet,
              e.category_id, e.is_read, e.gtd_task_id,

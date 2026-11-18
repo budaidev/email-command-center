@@ -8,7 +8,8 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
-import { getJSON, getModel } from '../services/llm.js';
+import { getJSON } from '../services/llm.js';
+import { evaluateImportance, aiScoreOf } from './importance.js';
 import {
   SYSTEM,
   buildUserMessage,
@@ -29,7 +30,7 @@ export const VALID_ACTIONS = new Set([
 function fetchEmailBatch(emailIds) {
   return db.prepare(`
     SELECT e.id, e.subject, e.sender_name, e.sender_email, e.recipients,
-           e.date, e.snippet, e.body_text, e.labels,
+           e.date, e.snippet, e.body_text, e.labels, e.message_id, e.account_id, e.uid,
            e.category_id, e.is_read,
            c.name AS category_name
     FROM emails e
@@ -83,19 +84,7 @@ export async function triageEmails(emailIds, force = false) {
   const allEmails = fetchEmailBatch(idsToProcess);
   if (allEmails.length === 0) return 0;
 
-  const instructions = getSetting('triage_instructions');
-  const learnedProfile = getSetting('triage_learned_profile');
-  const feedbackExamples = getTriageFeedbackExamples(15);
-  const model = await getModel();
-
-  // Batch in chunks of 40 to keep output tokens manageable
-  const BATCH_SIZE = 40;
-  const chunks = [];
-  for (let i = 0; i < allEmails.length; i += BATCH_SIZE) {
-    chunks.push(allEmails.slice(i, i + BATCH_SIZE));
-  }
-
-  console.log(`[Triage] Processing ${allEmails.length} emails in ${chunks.length} batch(es) with ${feedbackExamples.length} feedback examples`);
+  console.log(`[Triage] Evaluating ${allEmails.length} emails with the importance rubric`);
 
   // Pre-compute rule scores for all emails
   const scoringRules = loadScoringRules();
@@ -104,79 +93,51 @@ export async function triageEmails(emailIds, force = false) {
     ruleScoreMap.set(email.id, computeRuleScore(email, scoringRules));
   }
 
+  const { results, promptVersion, model } = await evaluateImportance(allEmails);
+
   const upsert = db.prepare(`
-    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, reason, suggested_task, model, status, error, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'evaluated', NULL, datetime('now'))
+    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, reason, suggested_task,
+                                model, status, error, important, criteria, prompt_version, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'evaluated', NULL, ?, ?, ?, datetime('now'))
     ON CONFLICT(email_id) DO UPDATE SET
       score = excluded.score, rule_score = excluded.rule_score, ai_score = excluded.ai_score,
       matched_rules = excluded.matched_rules, action_type = excluded.action_type,
       reason = excluded.reason, suggested_task = excluded.suggested_task,
-      model = excluded.model, status = 'evaluated', error = NULL, updated_at = datetime('now')
+      model = excluded.model, status = 'evaluated', error = NULL,
+      important = excluded.important, criteria = excluded.criteria, prompt_version = excluded.prompt_version,
+      updated_at = datetime('now')
   `);
   // An email the LLM did not answer for: keep any earlier evaluation, otherwise record why.
   const markNotEvaluated = db.prepare(`
-    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, model, status, error, updated_at)
-    VALUES (?, ?, ?, 0, ?, ?, ?, 'not_evaluated', ?, datetime('now'))
+    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, model, status, error, prompt_version, updated_at)
+    VALUES (?, ?, ?, 0, ?, ?, ?, 'not_evaluated', ?, ?, datetime('now'))
     ON CONFLICT(email_id) DO UPDATE SET error = excluded.error, updated_at = datetime('now')
       WHERE triage_results.status = 'not_evaluated'
   `);
-  const recordMissing = (emails, answered, why) => {
-    for (const e of emails) {
-      if (answered.has(e.id)) continue;
-      const rr = ruleScoreMap.get(e.id) || { ruleScore: 0, matchedRules: [], ruleActionType: null };
-      markNotEvaluated.run(e.id, rr.ruleScore, rr.ruleScore, JSON.stringify(rr.matchedRules),
-        rr.ruleActionType || 'none', model, why.slice(0, 300));
-    }
-  };
 
   let totalCount = 0;
-
-  for (let ci = 0; ci < chunks.length; ci++) {
-    const emails = chunks[ci];
-    const userMessage = buildUserMessage(emails, instructions, learnedProfile, feedbackExamples);
-    // Scale output tokens: ~100 tokens per email result
-    const maxTokens = Math.max(2000, emails.length * 120);
-
-    console.log(`[Triage] Batch ${ci + 1}/${chunks.length}: ${emails.length} emails, maxTokens=${maxTokens}`);
-
-    try {
-      const response = await getJSON(SYSTEM, userMessage, { maxTokens });
-      const results = response?.results;
-      if (!Array.isArray(results)) {
-        console.warn(`[Triage] Batch ${ci + 1}: LLM returned invalid response`);
-        recordMissing(emails, new Set(), 'LLM returned no results array');
+  const store = db.transaction(() => {
+    for (const e of allEmails) {
+      const ev = results.get(e.id);
+      const rr = ruleScoreMap.get(e.id) || { ruleScore: 0, matchedRules: [], ruleActionType: null };
+      if (!ev || ev.error) {
+        markNotEvaluated.run(e.id, rr.ruleScore, rr.ruleScore, JSON.stringify(rr.matchedRules),
+          rr.ruleActionType || 'none', model, (ev?.error || 'No AI answer').slice(0, 300), promptVersion);
         continue;
       }
-      const answered = new Set();
-
-      const validIds = new Set(emails.map(e => e.id));
-      const insertBatch = db.transaction(() => {
-        for (const r of results) {
-          if (!r.email_id || !validIds.has(r.email_id)) continue;
-          const aiScore = Math.max(0, Math.min(50, Math.round(Number(r.score) || 0)));
-          const ruleResult = ruleScoreMap.get(r.email_id) || { ruleScore: 0, matchedRules: [], ruleActionType: null };
-          const finalScore = Math.max(0, Math.min(100, ruleResult.ruleScore + aiScore));
-          const actionType = ruleResult.ruleActionType || (VALID_ACTIONS.has(r.action_type) ? r.action_type : 'none');
-          upsert.run(
-            r.email_id, finalScore, ruleResult.ruleScore, aiScore,
-            JSON.stringify(ruleResult.matchedRules),
-            actionType, r.reason || null, r.suggested_task || null, model,
-          );
-          answered.add(r.email_id);
-          totalCount++;
-        }
-      });
-      insertBatch();
-      recordMissing(emails, answered, 'Email missing from the LLM answer');
-
-      console.log(`[Triage] Batch ${ci + 1}: stored ${results.length} results`);
-    } catch (err) {
-      console.error(`[Triage] Batch ${ci + 1} failed:`, err.message);
-      recordMissing(emails, new Set(), `LLM call failed: ${err.message}`);
+      const aiScore = aiScoreOf(ev);
+      upsert.run(
+        e.id, Math.max(0, Math.min(100, rr.ruleScore + aiScore)), rr.ruleScore, aiScore,
+        JSON.stringify(rr.matchedRules), rr.ruleActionType || ev.action_type || 'none',
+        ev.why, ev.suggested_task, model,
+        ev.important ? 1 : 0, JSON.stringify({ ...ev.criteria, kind: ev.kind }), promptVersion,
+      );
+      totalCount++;
     }
-  }
+  });
+  store();
 
-  console.log(`[Triage] Done: ${totalCount} total results from ${allEmails.length} input emails`);
+  console.log(`[Triage] Done: ${totalCount} evaluated of ${allEmails.length} (${model}, ${promptVersion})`);
   return totalCount;
 }
 

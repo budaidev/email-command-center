@@ -13,11 +13,7 @@ import { applyCategoriesToNew } from './categorizer.js';
 import { loadScoringRules, computeRuleScore } from './scoring.js';
 import { runActionsForBatch } from './action-runner.js';
 import { getSetting, placeholders } from '../utils/settings.js';
-import {
-  SYSTEM as TRIAGE_SYSTEM,
-  buildUserMessage as triageBuildUserMessage,
-} from '../prompts/triage-emails.js';
-import { getTriageFeedbackExamples, VALID_ACTIONS } from './triage.js';
+import { evaluateImportance, aiScoreOf } from './importance.js';
 import { SYSTEM as SUMMARY_SYSTEM } from '../prompts/summarize-email.js';
 import { SYSTEM as REF_SYSTEM, buildUserMessage as refBuildUserMessage } from '../prompts/extract-references.js';
 
@@ -46,7 +42,7 @@ function appendStepRun(emailId, stepName) {
 function fetchEmails(emailIds) {
   return db.prepare(`
     SELECT e.id, e.subject, e.sender_name, e.sender_email, e.recipients,
-           e.date, e.snippet, e.body_text, e.labels,
+           e.date, e.snippet, e.body_text, e.labels, e.message_id, e.account_id, e.uid,
            e.category_id, e.is_read,
            c.name AS category_name, c.color AS category_color
     FROM emails e
@@ -181,7 +177,6 @@ async function scoreStep(emailIds, config) {
   const aiEnabled = config?.ai_enabled !== false;
   const emails = fetchEmails(emailIds);
   const scoringRules = loadScoringRules();
-  const model = await getModel();
 
   // Compute rule scores with enrichment data
   const ruleScoreMap = new Map();
@@ -191,54 +186,24 @@ async function scoreStep(emailIds, config) {
     ruleScoreMap.set(email.id, result);
   }
 
-  // AI scoring (batched)
-  let aiScoreMap = new Map();
-  const aiErrors = new Map(); // email id -> why it has no AI answer
+  // AI part: the importance rubric (card #239), one traced call per email.
+  let evals = new Map();
+  let promptVersion = null;
+  let model = null;
   if (aiEnabled && emails.length > 0) {
-    const instructions = getSetting('triage_instructions');
-    const learnedProfile = getSetting('triage_learned_profile');
-    const feedbackExamples = getTriageFeedbackExamples(15);
-
-    const BATCH_SIZE = 40;
-    for (let i = 0; i < emails.length; i += BATCH_SIZE) {
-      const batch = emails.slice(i, i + BATCH_SIZE);
-      try {
-        const userMessage = triageBuildUserMessage(batch, instructions, learnedProfile, feedbackExamples);
-        const maxTokens = Math.max(2000, batch.length * 120);
-        const response = await getJSON(TRIAGE_SYSTEM, userMessage, { maxTokens });
-        if (!Array.isArray(response?.results)) {
-          for (const e of batch) aiErrors.set(e.id, 'LLM returned no results array');
-        } else {
-          for (const r of response.results) {
-            if (r.email_id) {
-              aiScoreMap.set(r.email_id, {
-                score: Math.max(0, Math.min(50, Math.round(Number(r.score) || 0))),
-                action_type: VALID_ACTIONS.has(r.action_type) ? r.action_type : 'none',
-                reason: r.reason || null,
-                suggested_task: r.suggested_task || null,
-              });
-            }
-          }
-        }
-        for (const e of batch) {
-          if (!aiScoreMap.has(e.id) && !aiErrors.has(e.id)) aiErrors.set(e.id, 'Email missing from the LLM answer');
-        }
-      } catch (err) {
-        console.warn(`[Pipeline:score] AI batch failed:`, err.message);
-        for (const e of batch) aiErrors.set(e.id, `LLM call failed: ${err.message}`.slice(0, 300));
-      }
-    }
+    ({ results: evals, promptVersion, model } = await evaluateImportance(emails));
   }
 
-  // Combine and store
   const upsert = db.prepare(`
-    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, reason, suggested_task, model, status, error, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, reason, suggested_task,
+                                model, status, error, important, criteria, prompt_version, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(email_id) DO UPDATE SET
       score = excluded.score, rule_score = excluded.rule_score, ai_score = excluded.ai_score,
       matched_rules = excluded.matched_rules, action_type = excluded.action_type,
       reason = excluded.reason, suggested_task = excluded.suggested_task,
       model = excluded.model, status = excluded.status, error = excluded.error,
+      important = excluded.important, criteria = excluded.criteria, prompt_version = excluded.prompt_version,
       updated_at = datetime('now')
   `);
 
@@ -247,31 +212,36 @@ async function scoreStep(emailIds, config) {
   const insertAll = db.transaction(() => {
     for (const email of emails) {
       const ruleResult = ruleScoreMap.get(email.id) || { ruleScore: 0, matchedRules: [], ruleActionType: null };
-      // No AI answer is "not evaluated", never AI score 0 ("not important").
-      const aiResult = aiScoreMap.get(email.id) || null;
-      const evaluated = !aiEnabled || aiResult !== null;
-      const aiScore = aiResult ? aiResult.score : null;
-      const finalScore = Math.max(0, Math.min(100, ruleResult.ruleScore + (aiScore ?? 0)));
-      const actionType = ruleResult.ruleActionType || aiResult?.action_type || 'none';
+      // No AI answer is "not evaluated", never "not important".
+      const ev = evals.get(email.id);
+      const ok = ev && !ev.error;
+      const evaluated = !aiEnabled || ok;
+      const aiScore = ok ? aiScoreOf(ev) : 0; // 0 + status not_evaluated, see migration 015
+      const finalScore = Math.max(0, Math.min(100, ruleResult.ruleScore + aiScore));
+      const actionType = ruleResult.ruleActionType || (ok ? ev.action_type : null) || 'none';
       if (!evaluated) notEvaluated++;
 
       upsert.run(
-        email.id, finalScore, ruleResult.ruleScore, aiScore ?? 0, // 0 + status not_evaluated, see migration 015
+        email.id, finalScore, ruleResult.ruleScore, aiScore,
         JSON.stringify(ruleResult.matchedRules),
-        actionType, aiResult?.reason ?? null, aiResult?.suggested_task ?? null, model,
+        actionType, ok ? ev.why : null, ok ? ev.suggested_task : null, model,
         evaluated ? 'evaluated' : 'not_evaluated',
-        evaluated ? null : (aiErrors.get(email.id) || 'No AI answer'),
+        evaluated ? null : (ev?.error || 'No AI answer'),
+        ok ? (ev.important ? 1 : 0) : null,
+        ok ? JSON.stringify({ ...ev.criteria, kind: ev.kind }) : null,
+        aiEnabled ? promptVersion : null,
       );
 
       // Also store in enrichments
       const data = getEnrichments(email.id);
-      data.score = { final: finalScore, rule: ruleResult.ruleScore, ai: aiScore, matched_rules: ruleResult.matchedRules, status: evaluated ? 'evaluated' : 'not_evaluated' };
+      data.score = { final: finalScore, rule: ruleResult.ruleScore, ai: aiScore, matched_rules: ruleResult.matchedRules,
+        status: evaluated ? 'evaluated' : 'not_evaluated', important: ok ? ev.important : null };
       setEnrichments(email.id, data);
       count++;
     }
   });
   insertAll();
-  console.log(`[Pipeline:score] Scored ${count} emails (AI ${aiEnabled ? 'enabled' : 'disabled'}), ${notEvaluated} not evaluated`);
+  console.log(`[Pipeline:score] Scored ${count} emails (AI ${aiEnabled ? `${model}, ${promptVersion}` : 'disabled'}), ${notEvaluated} not evaluated`);
 }
 
 async function actionsStep(emailIds, _config) {

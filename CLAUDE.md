@@ -51,21 +51,24 @@ If you write a new module that reads env at import time, the `--env-file` flag h
 
 ## LLM endpoints
 
-Configured in `backend/.env` (bind-mounted into the container — host edits take effect on restart, no rebuild):
+Configured in `backend/.env` (bind-mounted into the container: host edits take effect on restart, no rebuild). All calls go through LiteLLM (`http://litellm:4000/v1`):
 
 | Key | Value |
 |-----|-------|
-| `LLM_PRIMARY_BASE_URL` | `http://100.125.119.50:8001/v1` (workpc-1 Tailscale IP) |
-| `LLM_PRIMARY_MODEL` | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` (label only — llama.cpp ignores it) |
-| `LLM_FALLBACK_BASE_URL` | `http://192.168.50.46:8317/v1` (NAS LAN IP, local cli-proxy) |
-| `LLM_FALLBACK_API_KEY` | `your-secure-api-key-here` — literal value, matches cli-proxy `config.yaml`. Looks like a placeholder, isn't. |
-| `LLM_FALLBACK_MODEL` | `gpt-5.2` |
+| `LLM_PRIMARY_MODEL` | `private-llm` (Gemini free tier, no fallback): summaries, categorising, references |
+| `LLM_FALLBACK_*` | also LiteLLM `private-llm`; the old workpc-1 llama.cpp is gone |
+| `LLM_IMPORTANCE_MODEL` | `email-llm` (cli-proxy GPT, chosen by the owner 2026-11-18): the importance rubric |
+| `LANGFUSE_HOST/_PUBLIC_KEY/_SECRET_KEY` | the LiteLLM project's keys: the rubric prompt is fetched from there |
 
-### `enable_thinking: false` is mandatory on the primary
+## Importance rubric (card #239)
 
-workpc-1 runs a Qwen3-style thinking model on llama.cpp. Left unconstrained the model dumps everything into `reasoning_content` and returns `content: ""`, which `llm.js#getJSON` then parses as `{}` — producing empty digests marked `complete`.
+The AI part of the triage score is three yes/no criteria with verbatim evidence quotes (`prompts/importance.js`, `services/importance.js`): reply or decision needed, mandatory appointment, payment due. Important = any yes = AI score 50, otherwise 0; rule scores add on top.
 
-`llm.js` sends `chat_template_kwargs: { enable_thinking: false }` only to the primary client (the fallback's cli-proxy doesn't understand it). Same fix the approval-service ships with. If you swap the primary endpoint, re-verify whether the new server honors that kwarg or needs a different field.
+- **Prompt lives in Langfuse** (`ecc-importance`, label `production`, project `litellm`). Edit it there; the backend picks the new version up within 5 minutes. `LOCAL_SYSTEM` is the fallback when Langfuse is down; results then carry `prompt_version = "ecc-importance local"`.
+- **One call per email**, 3 in parallel. Each is a Langfuse trace named `ecc-importance` with tags `app:email-command-center`, `prompt:ecc-importance:vN` and metadata `email_id`, `message_id`, `prompt_version`. LiteLLM's OTEL callback does not set Langfuse's own prompt link or trace id; filter on those metadata/tags.
+- **Bodies**: the sync stores no body. `ensureBodies` fetches missing bodies from the local mailserver before evaluating and saves them in `emails.body_text`. Before 2026-11-18 the AI saw only sender and subject.
+- `triage_results.criteria` (JSON with `evidence_found`: false when the quote is not in the email), `important`, `prompt_version`. The Today card shows them (`TriageCriteria.tsx`).
+- `runBacktest` (Triage page) still uses the old 0-50 prompt; card #241 replaces it with Langfuse experiments.
 
 ## Network
 

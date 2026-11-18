@@ -14,6 +14,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import type { TriageResult } from '../../api/client'
+import { TriageCriteria } from '../Triage/TriageCriteria'
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
   reply: <Reply size={11} />,
@@ -146,6 +147,9 @@ export function TriageEmailCard({ item, onApprove, onDismiss, onCreateTask }: Pr
             {item.reason}
           </p>
         )}
+
+        {/* Which rubric criteria were met, with the quotes (card #239) */}
+        <TriageCriteria item={item} />
 
         {/* Suggested task preview */}
         {item.suggested_task && (

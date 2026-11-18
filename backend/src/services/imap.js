@@ -110,6 +110,33 @@ export async function fetchMessage(account, uid) {
 }
 
 /**
+ * Plain-text bodies for several INBOX uids over one connection (card #239: the
+ * importance evaluation reads the body, which the sync does not store).
+ * Returns Map(uid -> { body_text, snippet }).
+ */
+export async function fetchBodies(account, uids) {
+  const out = new Map();
+  if (!uids.length) return out;
+  const client = createClient(account);
+  try {
+    await client.connect();
+    await client.mailboxOpen('INBOX');
+    for await (const msg of client.fetch(uids.join(','), { uid: true, source: true }, { uid: true })) {
+      const parsed = await simpleParser(msg.source);
+      let text = parsed.text || '';
+      if (!text.trim() && parsed.html) {
+        text = parsed.html.replace(/<(style|script)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n');
+      }
+      out.set(msg.uid, { body_text: text, snippet: text.slice(0, 200).replace(/\s+/g, ' ').trim() });
+    }
+  } finally {
+    await client.logout().catch(() => {});
+  }
+  return out;
+}
+
+/**
  * Fetch new messages since a given UID (incremental sync).
  */
 export async function fetchSince(account, sinceUid) {
