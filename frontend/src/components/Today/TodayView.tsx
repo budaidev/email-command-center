@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 import { api } from '../../api/client'
-import { Avatar } from '../shared/Avatar'
 import { GtdPulseWidget } from './GtdPulseWidget'
 import { TriageEmailCard } from './TriageEmailCard'
 
@@ -86,11 +86,17 @@ export function TodayView() {
   const { data: briefing, isLoading } = useQuery({
     queryKey: ['digest', 'today'],
     queryFn: api.getTodayBriefing,
-    refetchInterval: 60_000,
+    refetchInterval: (query) =>
+      query.state.data?.digestStatus === 'generating' ? 2_000 : 60_000,
   })
 
   const queryClient = useQueryClient()
   const today = new Date().toISOString().split('T')[0]
+
+  const regenerateMutation = useMutation({
+    mutationFn: () => api.generateDailyDigest(today, true),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['digest', 'today'] }),
+  })
 
   const { data: triageData } = useQuery({
     queryKey: ['triage', today],
@@ -248,6 +254,103 @@ export function TodayView() {
             <Stat label="Next sync" value="in 4m" hint="every 5 min" mono />
           </div>
         </header>
+
+        <DigestStatusBanner
+          status={briefing?.digestStatus ?? null}
+          error={briefing?.digestError ?? null}
+          arrived={d.arrived}
+          onRetry={() => regenerateMutation.mutate()}
+          retrying={regenerateMutation.isPending}
+        />
+
+        {/* AI-generated digest summary */}
+        {briefing?.digestStatus === 'complete' && (briefing.summary || briefing.highlights.length > 0 || briefing.fyi.length > 0) && (
+          <section style={{ marginBottom: 48 }}>
+            <SectionTitle kicker="00 · Daily digest" title="Today at a glance" />
+            {briefing.summary && (
+              <p
+                className="serif"
+                style={{
+                  fontSize: 17,
+                  lineHeight: 1.55,
+                  color: 'var(--text-2)',
+                  margin: '0 0 24px',
+                  maxWidth: 760,
+                }}
+              >
+                {briefing.summary}
+              </p>
+            )}
+            {briefing.highlights.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: briefing.fyi.length > 0 ? 20 : 0 }}>
+                {briefing.highlights.map((h, i) => {
+                  const accent = h.kind === 'decision' ? 'var(--accent)' : 'var(--text-3)'
+                  const clickable = !!h.emailId
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => h.emailId && navigate(`/email/${h.emailId}`)}
+                      disabled={!clickable}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '4px 1fr',
+                        gap: 14,
+                        padding: '12px 16px',
+                        background: 'var(--surface)',
+                        border: '1px solid var(--line-soft)',
+                        borderRadius: 8,
+                        textAlign: 'left',
+                        cursor: clickable ? 'pointer' : 'default',
+                      }}
+                    >
+                      <span style={{ background: accent, borderRadius: 2 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>
+                          {h.title}
+                        </div>
+                        {h.body && (
+                          <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.45 }}>{h.body}</div>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {briefing.fyi.length > 0 && (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {briefing.fyi.map((f, i) => (
+                  <li
+                    key={i}
+                    onClick={() => f.emailId && navigate(`/email/${f.emailId}`)}
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--text-3)',
+                      padding: '4px 0',
+                      cursor: f.emailId ? 'pointer' : 'default',
+                    }}
+                  >
+                    <span className="mono" style={{ color: 'var(--text-4)', marginRight: 8 }}>
+                      {f.kind === 'auto' ? 'AUTO' : 'FYI '}
+                    </span>
+                    {f.title}
+                    {f.count !== undefined && (
+                      <span style={{ color: 'var(--text-4)', marginLeft: 6 }}>({f.count})</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {briefing.generatedAt && (
+              <div
+                className="mono"
+                style={{ fontSize: 10, color: 'var(--text-4)', marginTop: 18, letterSpacing: '0.05em' }}
+              >
+                Generated {new Date(briefing.generatedAt + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Needs your attention — AI triage */}
         {triageItems.length > 0 && (
@@ -440,6 +543,89 @@ export function TodayView() {
           <GtdPulseWidget />
         </section>
       </div>
+    </div>
+  )
+}
+
+function DigestStatusBanner({
+  status,
+  error,
+  arrived,
+  onRetry,
+  retrying,
+}: {
+  status: 'generating' | 'complete' | 'error' | null
+  error: string | null
+  arrived: number
+  onRetry: () => void
+  retrying: boolean
+}) {
+  if (status === 'complete' || status === null) return null
+  if (arrived === 0) return null
+
+  const palette =
+    status === 'error'
+      ? { fg: 'var(--danger)', bg: 'rgba(220, 38, 38, 0.08)', border: 'rgba(220, 38, 38, 0.25)' }
+      : { fg: 'var(--warn)', bg: 'rgba(234, 179, 8, 0.08)', border: 'rgba(234, 179, 8, 0.25)' }
+
+  return (
+    <div
+      style={{
+        marginBottom: 32,
+        padding: '14px 18px',
+        background: palette.bg,
+        border: `1px solid ${palette.border}`,
+        borderRadius: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+      }}
+    >
+      {status === 'generating' ? (
+        <Loader2 className="animate-spin" style={{ width: 18, height: 18, color: palette.fg, flexShrink: 0 }} />
+      ) : (
+        <AlertCircle style={{ width: 18, height: 18, color: palette.fg, flexShrink: 0 }} />
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: palette.fg }}>
+          {status === 'generating' ? 'Generating today’s digest…' : 'Digest generation failed'}
+        </div>
+        {status === 'error' && error && (
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{error}</div>
+        )}
+        {status === 'generating' && (
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+            Highlights below are a fallback until the AI summary is ready.
+          </div>
+        )}
+      </div>
+      {status === 'error' && (
+        <button
+          onClick={onRetry}
+          disabled={retrying}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            fontSize: 12,
+            fontWeight: 500,
+            color: 'var(--text)',
+            background: 'transparent',
+            border: '1px solid var(--line)',
+            borderRadius: 6,
+            cursor: retrying ? 'wait' : 'pointer',
+            opacity: retrying ? 0.6 : 1,
+          }}
+        >
+          {retrying ? (
+            <Loader2 className="animate-spin" style={{ width: 12, height: 12 }} />
+          ) : (
+            <RefreshCw style={{ width: 12, height: 12 }} />
+          )}
+          Retry
+        </button>
+      )}
     </div>
   )
 }

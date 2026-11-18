@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Play, Loader2, RefreshCw, Trash2, Brain } from 'lucide-react'
+import { Save, Play, Loader2, RefreshCw } from 'lucide-react'
 import { api } from '../../api/client'
 
 export function TriageConfig() {

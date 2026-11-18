@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Trash2, Archive, ExternalLink } from 'lucide-react'
-import { api, Email } from '../../api/client'
+import { Trash2, Archive } from 'lucide-react'
+import { api } from '../../api/client'
 
 interface Props {
   emailId: string | null

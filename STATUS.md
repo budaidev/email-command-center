@@ -1,12 +1,22 @@
 # Email Command Center — Current Status
-_Last updated: 2026-04-22_
+_Last updated: 2026-05-14_
 
 ## What's Running
-- **Backend**: port 3002 — `cd backend && node src/index.js`
-- **Frontend**: port 5174+ — `cd frontend && npm run dev`
-- **IMAP**: Local Dovecot (configured via `.env`)
-- **LLM**: Primary + fallback endpoints (configured via `.env`)
+- **Production**: Dockerized via `docker-compose.yml`. Backend `email-command-center-backend` on host `:3009` → container `:3002`. Frontend `email-command-center-frontend` on host `:5174` → container `:80` (nginx serving the prebuilt Vite bundle).
+- **Local dev** (rarely used): `cd backend && node --env-file=.env src/index.js` ; `cd frontend && npm run dev`
+- **IMAP**: Local Dovecot via `mailserver` container (`100.88.15.36:143`)
+- **LLM**: Primary = workpc-1 Gemma at `100.125.119.50:8001`. Fallback = local cli-proxy at `192.168.50.46:8317`.
 - **10 email categories**, **39 category rules**, **0 scoring rules** (ready to configure)
+
+## Recent Changes (2026-05-14)
+
+- **LLM endpoint loading fixed.** Backend Dockerfile now launches Node with `--env-file=/app/.env`. Previously, ES-module hoisting meant the top-level imports in `index.js` ran before `dotenv.config()` finished, so `llm.js` cached the *default* endpoints (`localhost:8001/8002`) and every digest call failed with `Connection error`. Other modules (IMAP, Vikunja) were unaffected because they read `process.env` lazily inside functions.
+- **Thinking mode disabled on the primary LLM.** `llm.js` now sends `chat_template_kwargs: { enable_thinking: false }` to workpc-1. Without it, Qwen3-style thinking burns the entire `max_tokens` budget on `reasoning_content` and returns an empty `content` field, producing `{}` digests marked `complete`.
+- **`GET /api/daily-digests/today`** now returns `digestStatus` (`'generating' | 'complete' | 'error' | null`) and `digestError` so the UI can surface the real state.
+- **Today view** added an "AI digest" section that renders `briefing.summary`, `briefing.highlights`, and `briefing.fyi` (previously fetched but never displayed) plus a status banner that shows "Generating…" with 2-second polling or a red "Generation failed" banner with the backend error and a Retry button.
+- **Process Inbox** gained a 6th option **Skip** (key `K`, neutral styling) that advances to the next item without mutating the task. The inbox-zero summary counts skipped items separately.
+- **Process Inbox card** now shows the task description (Vikunja `notes`) below the title — HTML stripped server-side via `previewNotes()` in `routes/tasks.js`, capped at 500 chars, rendered with `whiteSpace: pre-wrap` in a scrollable 180px block.
+- **Backfilled** digests for 2026-05-01 through 2026-05-13.
 
 ---
 
@@ -39,12 +49,14 @@ _Last updated: 2026-04-22_
 ## Features
 
 ### Today View (`/`)
-**Purpose**: Answer "what needs my attention today?" — driven by AI triage, not digest generation.
+**Purpose**: Answer "what needs my attention today?" — driven by AI triage *and* the daily digest.
 
 **Sections**:
 1. **Masthead**: Greeting + "You have N items that need your attention" (count from triage)
 2. **Stats row**: Arrived / Auto-handled / For you / Next sync
-3. **01 · Needs your attention**: AI-triaged emails scored ≥50 with no feedback yet. Each card shows:
+3. **Digest status banner** (conditional): Shown only when `digestStatus !== 'complete'`. Yellow "Generating…" with 2 s polling, or red "Generation failed" with the backend `error_msg` and a **Retry** button.
+4. **00 · Daily digest — Today at a glance**: Renders when `digestStatus === 'complete'`. AI-generated `summary` paragraph (italic serif), `highlights` cards (blue accent = `kind: decision`, grey = `kind: fyi`, clickable when `emailId` present), `fyi` list (mono-prefixed AUTO/FYI), and a "Generated HH:MM" timestamp.
+5. **01 · Needs your attention**: AI-triaged emails scored ≥50 with no feedback yet. Each card shows:
    - Score badge with breakdown (e.g., `82 35+47` = rules + AI)
    - Action type chip (Reply, Review, Decide, Schedule, Pickup, etc.)
    - Sender, subject, AI reason
@@ -98,7 +110,7 @@ _Last updated: 2026-04-22_
 - **Buckets**: Horizontal flow (Inbox → Next → Waiting → Someday → Completed) with counts
 - **Improvement flows** (3×2 grid of cards, each launches a modal):
   - **Weekly Review**: 5-step guided wizard (clear inbox → review next/wait/some → reflect)
-  - **Process Inbox**: Keyboard-driven triage (Y/W/S/D/X keys) with GTD tips panel
+  - **Process Inbox**: Keyboard-driven triage (Y/W/S/D/X/K keys — last one is Skip, leaves task untouched) with GTD tips panel. Card shows the Vikunja task description below the title.
   - **Stale Sweep**: Batch review of tasks untouched >14 days (Keep/Someday/Sharpen/Trash)
   - **Sharpen Vague**: AI rewrite wizard for vague task titles
   - **Nudge Waiting-For**: AI draft follow-up messages, copy to clipboard

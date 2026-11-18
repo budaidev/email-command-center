@@ -1,10 +1,16 @@
 import OpenAI from 'openai';
 
 // --- Primary LLM endpoint ---
+// In the LiteLLM-routed setup this points at litellm:4000 with the master key;
+// it can also point at a raw vLLM/llama.cpp endpoint that ignores auth.
 const PRIMARY_BASE_URL = process.env.LLM_PRIMARY_BASE_URL || 'http://localhost:8001/v1';
 const PRIMARY_MODEL = process.env.LLM_PRIMARY_MODEL || 'default';
+const PRIMARY_API_KEY = process.env.LLM_PRIMARY_API_KEY || 'not-needed';
 
 // --- Fallback LLM endpoint ---
+// Used only when the primary /models probe fails. LiteLLM already does its own
+// per-model fallback chain, so when PRIMARY is LiteLLM this only kicks in if
+// LiteLLM itself is down.
 const FALLBACK_BASE_URL = process.env.LLM_FALLBACK_BASE_URL || 'http://localhost:8002/v1';
 const FALLBACK_API_KEY = process.env.LLM_FALLBACK_API_KEY || 'not-needed';
 const FALLBACK_MODEL = process.env.LLM_FALLBACK_MODEL || 'default';
@@ -13,30 +19,42 @@ let _primaryAvailable = null; // null = not checked yet
 let _lastCheck = 0;
 const CHECK_INTERVAL_MS = 60_000; // re-check every 60s
 
+const _primaryAuthHeader = PRIMARY_API_KEY && PRIMARY_API_KEY !== 'not-needed'
+  ? { Authorization: `Bearer ${PRIMARY_API_KEY}` }
+  : {};
+
 async function isPrimaryAvailable() {
   const now = Date.now();
   if (_primaryAvailable !== null && now - _lastCheck < CHECK_INTERVAL_MS) {
     return _primaryAvailable;
   }
   try {
-    const res = await fetch(`${PRIMARY_BASE_URL}/models`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${PRIMARY_BASE_URL}/models`, {
+      signal: AbortSignal.timeout(3000),
+      headers: _primaryAuthHeader,
+    });
     _primaryAvailable = res.ok;
   } catch {
     _primaryAvailable = false;
   }
   _lastCheck = now;
-  console.log(`[LLM] Primary endpoint ${_primaryAvailable ? 'available' : 'unavailable'}, using ${_primaryAvailable ? 'Gemma' : 'CLIProxy fallback'}`);
+  console.log(`[LLM] Primary endpoint ${_primaryAvailable ? 'available' : 'unavailable'}, using ${_primaryAvailable ? 'primary' : 'fallback'}`);
   return _primaryAvailable;
 }
 
-const _primaryClient = new OpenAI({ baseURL: PRIMARY_BASE_URL, apiKey: 'not-needed', timeout: 300000 });
+const _primaryClient = new OpenAI({ baseURL: PRIMARY_BASE_URL, apiKey: PRIMARY_API_KEY, timeout: 300000 });
 const _fallbackClient = new OpenAI({ baseURL: FALLBACK_BASE_URL, apiKey: FALLBACK_API_KEY, timeout: 300000 });
+
+// Primary endpoint runs a thinking model (Qwen-style) on llama.cpp. Left unconstrained,
+// it burns the entire max_tokens budget on reasoning_content and returns empty content.
+// chat_template_kwargs.enable_thinking=false disables that — verified on workpc-1.
+const PRIMARY_EXTRA_BODY = { chat_template_kwargs: { enable_thinking: false } };
 
 async function getActiveConfig() {
   const usePrimary = await isPrimaryAvailable();
   return usePrimary
-    ? { client: _primaryClient, model: PRIMARY_MODEL, needsSanitize: false }
-    : { client: _fallbackClient, model: FALLBACK_MODEL, needsSanitize: true };
+    ? { client: _primaryClient, model: PRIMARY_MODEL, needsSanitize: false, extraBody: PRIMARY_EXTRA_BODY }
+    : { client: _fallbackClient, model: FALLBACK_MODEL, needsSanitize: true, extraBody: undefined };
 }
 
 export async function getModel() {
@@ -71,6 +89,7 @@ export async function streamChat(messages, onChunk, options = {}) {
     max_tokens: maxTokens,
     temperature,
     stream: true,
+    ...(active.extraBody || {}),
   });
 
   let fullContent = '';
@@ -108,6 +127,7 @@ export async function getJSON(systemPrompt, userMessage, options = {}) {
     max_tokens: effectiveMaxTokens,
     temperature: 0,
     response_format: { type: 'json_object' },
+    ...(active.extraBody || {}),
   };
 
   const response = await active.client.chat.completions.create(requestBody);

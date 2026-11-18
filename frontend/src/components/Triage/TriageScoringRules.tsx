@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Play, Loader2, X } from 'lucide-react'
 import { api } from '../../api/client'
-import type { ScoringRule, ScoringRuleTestResult } from '../../api/client'
+import type { ScoringRuleTestResult } from '../../api/client'
 
 const FIELDS = [
   { value: 'sender_domain', label: 'Sender domain' },

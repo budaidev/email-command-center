@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Sparkles, Edit, Check, X } from 'lucide-react'
 import { api } from '../../api/client'
-import type { VagueTask } from '../../api/client'
 import { SuggestionChips } from '../shared/SuggestionChips'
 
 interface Props {

@@ -218,9 +218,12 @@ export interface TodayBriefing {
   arrived: number
   handled: number
   remaining: number
+  summary: string | null
   highlights: TodayHighlight[]
   fyi: TodayFyi[]
   generatedAt: string | null
+  digestStatus: 'generating' | 'complete' | 'error' | null
+  digestError: string | null
 }
 
 export interface TodayHighlight {
@@ -304,7 +307,7 @@ export interface GtdHealth {
   praise: { kind: string; text: string }[];
   stale: { id: number; list: string; title: string; ageDays: number }[];
   waitingFor: { id: number; title: string; who: string; sinceDays: number; nudged: string | null; email: string }[];
-  inboxToProcess: { id: number; title: string; src: 'email' | 'manual' }[];
+  inboxToProcess: { id: number; title: string; src: 'email' | 'manual'; notes?: string }[];
 }
 
 export interface VagueTask {
@@ -412,10 +415,14 @@ export interface PipelineStep {
 
 export interface PipelineStatus {
   total: number;
+  totalEmails: number;
   completed: number;
   errors: number;
+  inProgress: number;
+  unenriched: number;
   lastRun: string | null;
   steps: PipelineStep[];
+  recentErrors: { sender_email: string; subject: string; error: string }[];
 }
 
 export interface EmailEnrichment {

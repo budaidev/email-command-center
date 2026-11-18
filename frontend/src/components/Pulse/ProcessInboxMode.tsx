@@ -17,10 +17,11 @@ const VERBS = [
   { key: 'S', label: 'Someday', col: 'some', color: 'var(--violet)' },
   { key: 'D', label: 'Done', col: 'done', color: 'var(--ok)' },
   { key: 'X', label: 'Trash', col: '_trash', color: 'var(--text-3)' },
+  { key: 'K', label: 'Skip', col: '_skip', color: 'var(--text-4)' },
 ] as const
 
 const verbLabel = (v: string) =>
-  ({ next: 'Next Action', wait: 'Waiting For', some: 'Someday', done: 'Done', _trash: 'Trash' }[v] || v)
+  ({ next: 'Next Action', wait: 'Waiting For', some: 'Someday', done: 'Done', _trash: 'Trash', _skip: 'Skipped' }[v] || v)
 
 const GTD_TIPS = [
   'Is this actionable? If not, trash it or move to Someday.',
@@ -56,7 +57,7 @@ export function ProcessInboxMode({ pulse, onClose }: Props) {
     setDecisions(d => [...d, { id: current.id, title: current.title, verb }])
     if (verb === '_trash') {
       deleteMutation.mutate(current.id)
-    } else {
+    } else if (verb !== '_skip') {
       moveMutation.mutate({ taskId: current.id, col: verb })
     }
     setIdx(i => i + 1)
@@ -71,6 +72,7 @@ export function ProcessInboxMode({ pulse, onClose }: Props) {
       else if (k === 's') decide('some')
       else if (k === 'd') decide('done')
       else if (k === 'x') decide('_trash')
+      else if (k === 'k') decide('_skip')
       else if (k === 'escape') onClose()
     }
     window.addEventListener('keydown', onKey)
@@ -104,7 +106,7 @@ export function ProcessInboxMode({ pulse, onClose }: Props) {
             marginTop: 20, padding: 12, background: 'var(--surface-2)',
             borderRadius: 10, textAlign: 'left', maxWidth: 360, margin: '20px auto 0',
           }}>
-            {['next', 'wait', 'some', 'done', '_trash'].map(v => {
+            {['next', 'wait', 'some', 'done', '_trash', '_skip'].map(v => {
               const count = decisions.filter(d => d.verb === v).length
               if (!count) return null
               return (
@@ -137,6 +139,24 @@ export function ProcessInboxMode({ pulse, onClose }: Props) {
             <div style={{ fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em', color: 'var(--text)' }}>
               {current.title}
             </div>
+            {current.notes && (
+              <div
+                style={{
+                  marginTop: 10,
+                  paddingTop: 10,
+                  borderTop: '1px solid var(--line-soft)',
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: 'var(--text-3)',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  maxHeight: 180,
+                  overflowY: 'auto',
+                }}
+              >
+                {current.notes}
+              </div>
+            )}
           </div>
 
           {/* Decision buttons */}
@@ -146,7 +166,7 @@ export function ProcessInboxMode({ pulse, onClose }: Props) {
           }}>
             What is it?
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
             {VERBS.map(v => (
               <button
                 key={v.key}
@@ -178,7 +198,7 @@ export function ProcessInboxMode({ pulse, onClose }: Props) {
             }} />
           </div>
           <div style={{ marginTop: 12, fontSize: 11, color: 'var(--text-4)' }}>
-            Keyboard: <Kbd>Y</Kbd> <Kbd>W</Kbd> <Kbd>S</Kbd> <Kbd>D</Kbd> <Kbd>X</Kbd> · <Kbd>Esc</Kbd> to exit
+            Keyboard: <Kbd>Y</Kbd> <Kbd>W</Kbd> <Kbd>S</Kbd> <Kbd>D</Kbd> <Kbd>X</Kbd> <Kbd>K</Kbd> · <Kbd>Esc</Kbd> to exit
           </div>
 
           {/* GTD Tips (collapsible) */}

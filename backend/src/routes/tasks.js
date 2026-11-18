@@ -27,6 +27,26 @@ const router = Router();
 
 const ACTION_VERBS = /^(call|email|send|write|review|read|buy|get|pick up|schedule|book|attend|meet|discuss|ask|tell|confirm|check|verify|update|create|draft|prepare|research|find|look up|download|upload|install|fix|repair|clean|organize|file|submit|apply|register|cancel|return|exchange|pay|transfer|deposit|order|ship|deliver|print|copy|scan|sign|complete|finish|start|begin|continue|follow up|respond|reply|contact|reach out|set up|configure|test|debug|deploy|push|merge|commit|approve|reject|decide|plan|outline|brainstorm|list|prioritize|delegate|assign|train|teach|learn|study|practice|exercise|cook|make|build|assemble|pack|move|arrange|sort|label|tag|archive|backup|restore|renew|extend|upgrade|counter|block|choose|request|post|publish|record|watch|open|close|delete)/i;
 
+// Strip HTML tags from Vikunja's stored description, preserve paragraph/list breaks,
+// and truncate to a short preview for the Process Inbox card.
+function previewNotes(html, max = 500) {
+  if (!html) return '';
+  const text = String(html)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|li|h[1-6]|div)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text;
+}
+
 function analyzeTask(title) {
   const words = title.trim().split(/\s+/);
 
@@ -151,6 +171,7 @@ function computeHealth(tasks) {
     id: t.id,
     title: t.title,
     src: emailTaskIds.has(t.id) ? 'email' : 'manual',
+    notes: previewNotes(t.notes),
   }));
 
   return {

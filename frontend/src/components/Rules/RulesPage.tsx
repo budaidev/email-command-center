@@ -79,7 +79,7 @@ export function RulesPage({ onClose, onSelectEmail }: Props) {
     }
   }
 
-  const loadGroupEmails = useCallback(async (group: string, q: string, p = preview) => {
+  const loadGroupEmails = useCallback(async (group: string, q: string, _p = preview) => {
     const result = await api.previewEmails(group, q)
     setEmails(result.emails)
     setEmailsTotal(result.total)

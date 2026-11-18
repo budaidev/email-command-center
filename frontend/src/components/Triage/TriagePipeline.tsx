@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Play, Loader2, Settings, ChevronDown, ChevronRight } from 'lucide-react'
+import { Play, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { api } from '../../api/client'
 
 const STEP_ICONS: Record<string, string> = {

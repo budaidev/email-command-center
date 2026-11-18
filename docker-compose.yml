@@ -1,21 +1,36 @@
 services:
   backend:
+    mem_limit: 1G
+    memswap_limit: 1G
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: email-command-center-backend
     ports:
-      - "3002:3002"
+      - "3009:3002"
     volumes:
       - ./backend/data:/app/data
       - ./backend/.env:/app/.env:ro
+    networks:
+      - paperless-net
     restart: unless-stopped
 
   frontend:
+    mem_limit: 256M
+    memswap_limit: 256M
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    container_name: email-command-center-frontend
     ports:
       - "5174:80"
     depends_on:
       - backend
+    networks:
+      - paperless-net
     restart: unless-stopped
+
+networks:
+  paperless-net:
+    external: true
+    name: paperless-ai-dev_paperless-net

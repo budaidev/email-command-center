@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, ChevronDown, ChevronRight, RefreshCw, X, Check, GripVertical } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, RefreshCw, X, Check } from 'lucide-react'
 import { api, Category, CategoryRule } from '../../api/client'
 
 const COLORS = ['#6366f1','#8b5cf6','#ec4899','#f43f5e','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#14b8a6','#4b5563']
@@ -214,7 +214,7 @@ function CategoryCard({ cat, expanded, onToggle, onUpdate, onDelete }: {
                       style={{ backgroundColor: c }} />
                   ))}
                 </div>
-                <select value={editBehavior} onChange={e => setEditBehavior(e.target.value)}
+                <select value={editBehavior} onChange={e => setEditBehavior(e.target.value as Category['behavior'])}
                   className="ml-auto bg-[var(--surface)] border border-[var(--line)] rounded px-2 py-1 text-xs text-[var(--text-2)] outline-none">
                   {BEHAVIORS.map(b => <option key={b.value} value={b.value} title={b.desc}>{b.label}</option>)}
                 </select>

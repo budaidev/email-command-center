@@ -119,6 +119,8 @@ router.get('/today', async (req, res, next) => {
       highlights,
       fyi,
       generatedAt: digest?.generated_at || null,
+      digestStatus: digest?.status || null,
+      digestError: digest?.error_msg || null,
     });
   } catch (err) {
     next(err);

@@ -15,7 +15,7 @@ export function DigestView({ onSelectEmail }: Props) {
   const [period, setPeriod] = useState<Period>('1d')
   const [expanded, setExpanded] = useState<Set<string | null>>(new Set())
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['digest', period],
     queryFn: () => api.getDigest(period),
     refetchInterval: 60_000,

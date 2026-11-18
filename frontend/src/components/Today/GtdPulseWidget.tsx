@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { CheckCircle, ChevronRight } from 'lucide-react'
 import { api } from '../../api/client'
-import { ScoreRing, scoreColor, scoreLabel } from '../Pulse/ScoreRing'
+import { ScoreRing, scoreLabel } from '../Pulse/ScoreRing'
 
 export function GtdPulseWidget() {
   const navigate = useNavigate()
@@ -14,7 +14,6 @@ export function GtdPulseWidget() {
 
   if (!pulse) return null
 
-  const color = scoreColor(pulse.score)
   const countBuckets = [
     { label: 'Inbox', v: pulse.counts.inbox, hint: 'to process', tone: 'var(--text-3)' },
     { label: 'Next', v: pulse.counts.next, hint: 'ready to do', tone: 'var(--accent)' },

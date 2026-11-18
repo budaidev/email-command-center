@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import type { EmailClassification } from '../../api/client'
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Sparkles, FileText, Tag, RefreshCw, Loader2, CalendarClock, User, DollarSign, Link2, CheckSquare, X, Plus, Wand2, Zap, Play, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Sparkles, Tag, RefreshCw, Loader2, CalendarClock, User, DollarSign, Link2, CheckSquare, X, Plus, Wand2, Zap, Play, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Email, Tag as TagType, ActionLogEntry, api } from '../../api/client'
 import { useSummary, EmailRef } from '../../hooks/useSummary'
 
