@@ -91,6 +91,16 @@ export function TriageConfig() {
             No learned preferences yet. Approve/dismiss emails on the Today page to train the AI.
           </div>
         )}
+        {(prefs?.evaluation?.notEvaluated ?? 0) > 0 && (
+          <div title={prefs?.evaluation?.lastError ?? ''} style={{
+            marginTop: 8, padding: '6px 10px', fontSize: 11, lineHeight: 1.5, borderRadius: 6,
+            color: 'var(--warn, #b45309)', background: 'color-mix(in oklch, var(--warn, #b45309) 10%, transparent)',
+            border: '1px solid color-mix(in oklch, var(--warn, #b45309) 30%, transparent)',
+          }}>
+            <b>{prefs!.evaluation!.notEvaluated}</b> of {prefs!.evaluation!.total} emails are <b>not evaluated</b> (the AI gave no answer).
+            {prefs?.evaluation?.lastError && <> Last error: {prefs.evaluation.lastError}</>}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-3)' }}>
             <span><b style={{ color: 'var(--ok)' }}>{statMap.approve ?? 0}</b> approved</span>

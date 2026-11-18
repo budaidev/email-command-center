@@ -440,6 +440,7 @@ export interface TriagePreferences {
   learnedProfile: string;
   enabled: boolean;
   stats: { decision: string; count: number }[];
+  evaluation?: { total: number; notEvaluated: number | null; lastFailureAt: string | null; lastError: string | null };
 }
 
 export const TASK_COLUMNS = [

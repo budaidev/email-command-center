@@ -105,14 +105,29 @@ export async function triageEmails(emailIds, force = false) {
   }
 
   const upsert = db.prepare(`
-    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, reason, suggested_task, model, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, reason, suggested_task, model, status, error, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'evaluated', NULL, datetime('now'))
     ON CONFLICT(email_id) DO UPDATE SET
       score = excluded.score, rule_score = excluded.rule_score, ai_score = excluded.ai_score,
       matched_rules = excluded.matched_rules, action_type = excluded.action_type,
       reason = excluded.reason, suggested_task = excluded.suggested_task,
-      model = excluded.model, updated_at = datetime('now')
+      model = excluded.model, status = 'evaluated', error = NULL, updated_at = datetime('now')
   `);
+  // An email the LLM did not answer for: keep any earlier evaluation, otherwise record why.
+  const markNotEvaluated = db.prepare(`
+    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, model, status, error, updated_at)
+    VALUES (?, ?, ?, 0, ?, ?, ?, 'not_evaluated', ?, datetime('now'))
+    ON CONFLICT(email_id) DO UPDATE SET error = excluded.error, updated_at = datetime('now')
+      WHERE triage_results.status = 'not_evaluated'
+  `);
+  const recordMissing = (emails, answered, why) => {
+    for (const e of emails) {
+      if (answered.has(e.id)) continue;
+      const rr = ruleScoreMap.get(e.id) || { ruleScore: 0, matchedRules: [], ruleActionType: null };
+      markNotEvaluated.run(e.id, rr.ruleScore, rr.ruleScore, JSON.stringify(rr.matchedRules),
+        rr.ruleActionType || 'none', model, why.slice(0, 300));
+    }
+  };
 
   let totalCount = 0;
 
@@ -129,8 +144,10 @@ export async function triageEmails(emailIds, force = false) {
       const results = response?.results;
       if (!Array.isArray(results)) {
         console.warn(`[Triage] Batch ${ci + 1}: LLM returned invalid response`);
+        recordMissing(emails, new Set(), 'LLM returned no results array');
         continue;
       }
+      const answered = new Set();
 
       const validIds = new Set(emails.map(e => e.id));
       const insertBatch = db.transaction(() => {
@@ -145,14 +162,17 @@ export async function triageEmails(emailIds, force = false) {
             JSON.stringify(ruleResult.matchedRules),
             actionType, r.reason || null, r.suggested_task || null, model,
           );
+          answered.add(r.email_id);
           totalCount++;
         }
       });
       insertBatch();
+      recordMissing(emails, answered, 'Email missing from the LLM answer');
 
       console.log(`[Triage] Batch ${ci + 1}: stored ${results.length} results`);
     } catch (err) {
       console.error(`[Triage] Batch ${ci + 1} failed:`, err.message);
+      recordMissing(emails, new Set(), `LLM call failed: ${err.message}`);
     }
   }
 

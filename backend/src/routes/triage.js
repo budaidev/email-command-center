@@ -131,7 +131,15 @@ router.get('/preferences', (req, res, next) => {
       SELECT decision, COUNT(*) AS count FROM triage_feedback GROUP BY decision
     `).all();
 
-    res.json({ instructions, learnedProfile, enabled, stats });
+    const evaluation = db.prepare(`
+      SELECT COUNT(*) AS total,
+             SUM(status = 'not_evaluated') AS notEvaluated,
+             MAX(CASE WHEN status = 'not_evaluated' THEN updated_at END) AS lastFailureAt,
+             (SELECT error FROM triage_results WHERE status = 'not_evaluated' ORDER BY updated_at DESC LIMIT 1) AS lastError
+      FROM triage_results
+    `).get();
+
+    res.json({ instructions, learnedProfile, enabled, stats, evaluation });
   } catch (err) {
     next(err);
   }

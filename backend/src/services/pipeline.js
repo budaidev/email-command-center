@@ -193,6 +193,7 @@ async function scoreStep(emailIds, config) {
 
   // AI scoring (batched)
   let aiScoreMap = new Map();
+  const aiErrors = new Map(); // email id -> why it has no AI answer
   if (aiEnabled && emails.length > 0) {
     const instructions = getSetting('triage_instructions');
     const learnedProfile = getSetting('triage_learned_profile');
@@ -205,7 +206,9 @@ async function scoreStep(emailIds, config) {
         const userMessage = triageBuildUserMessage(batch, instructions, learnedProfile, feedbackExamples);
         const maxTokens = Math.max(2000, batch.length * 120);
         const response = await getJSON(TRIAGE_SYSTEM, userMessage, { maxTokens });
-        if (Array.isArray(response?.results)) {
+        if (!Array.isArray(response?.results)) {
+          for (const e of batch) aiErrors.set(e.id, 'LLM returned no results array');
+        } else {
           for (const r of response.results) {
             if (r.email_id) {
               aiScoreMap.set(r.email_id, {
@@ -217,46 +220,58 @@ async function scoreStep(emailIds, config) {
             }
           }
         }
+        for (const e of batch) {
+          if (!aiScoreMap.has(e.id) && !aiErrors.has(e.id)) aiErrors.set(e.id, 'Email missing from the LLM answer');
+        }
       } catch (err) {
         console.warn(`[Pipeline:score] AI batch failed:`, err.message);
+        for (const e of batch) aiErrors.set(e.id, `LLM call failed: ${err.message}`.slice(0, 300));
       }
     }
   }
 
   // Combine and store
   const upsert = db.prepare(`
-    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, reason, suggested_task, model, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, reason, suggested_task, model, status, error, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(email_id) DO UPDATE SET
       score = excluded.score, rule_score = excluded.rule_score, ai_score = excluded.ai_score,
       matched_rules = excluded.matched_rules, action_type = excluded.action_type,
       reason = excluded.reason, suggested_task = excluded.suggested_task,
-      model = excluded.model, updated_at = datetime('now')
+      model = excluded.model, status = excluded.status, error = excluded.error,
+      updated_at = datetime('now')
   `);
 
   let count = 0;
+  let notEvaluated = 0;
   const insertAll = db.transaction(() => {
     for (const email of emails) {
       const ruleResult = ruleScoreMap.get(email.id) || { ruleScore: 0, matchedRules: [], ruleActionType: null };
-      const aiResult = aiScoreMap.get(email.id) || { score: 0, action_type: 'none', reason: null, suggested_task: null };
-      const finalScore = Math.max(0, Math.min(100, ruleResult.ruleScore + aiResult.score));
-      const actionType = ruleResult.ruleActionType || aiResult.action_type;
+      // No AI answer is "not evaluated", never AI score 0 ("not important").
+      const aiResult = aiScoreMap.get(email.id) || null;
+      const evaluated = !aiEnabled || aiResult !== null;
+      const aiScore = aiResult ? aiResult.score : null;
+      const finalScore = Math.max(0, Math.min(100, ruleResult.ruleScore + (aiScore ?? 0)));
+      const actionType = ruleResult.ruleActionType || aiResult?.action_type || 'none';
+      if (!evaluated) notEvaluated++;
 
       upsert.run(
-        email.id, finalScore, ruleResult.ruleScore, aiResult.score,
+        email.id, finalScore, ruleResult.ruleScore, aiScore ?? 0, // 0 + status not_evaluated, see migration 015
         JSON.stringify(ruleResult.matchedRules),
-        actionType, aiResult.reason, aiResult.suggested_task, model,
+        actionType, aiResult?.reason ?? null, aiResult?.suggested_task ?? null, model,
+        evaluated ? 'evaluated' : 'not_evaluated',
+        evaluated ? null : (aiErrors.get(email.id) || 'No AI answer'),
       );
 
       // Also store in enrichments
       const data = getEnrichments(email.id);
-      data.score = { final: finalScore, rule: ruleResult.ruleScore, ai: aiResult.score, matched_rules: ruleResult.matchedRules };
+      data.score = { final: finalScore, rule: ruleResult.ruleScore, ai: aiScore, matched_rules: ruleResult.matchedRules, status: evaluated ? 'evaluated' : 'not_evaluated' };
       setEnrichments(email.id, data);
       count++;
     }
   });
   insertAll();
-  console.log(`[Pipeline:score] Scored ${count} emails (AI ${aiEnabled ? 'enabled' : 'disabled'})`);
+  console.log(`[Pipeline:score] Scored ${count} emails (AI ${aiEnabled ? 'enabled' : 'disabled'}), ${notEvaluated} not evaluated`);
 }
 
 async function actionsStep(emailIds, _config) {

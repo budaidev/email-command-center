@@ -45,9 +45,9 @@ export async function syncAccount(account) {
 
     const insert = db.prepare(`
       INSERT OR IGNORE INTO emails
-        (id, account_id, uid, subject, sender_name, sender_email, recipients, date, is_read, labels, snippet)
+        (id, account_id, uid, subject, sender_name, sender_email, recipients, date, is_read, labels, snippet, message_id, received_at)
       VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertMany = db.transaction((msgs) => {
@@ -58,7 +58,8 @@ export async function syncAccount(account) {
           id, accountId, msg.uid,
           msg.subject, msg.sender_name, msg.sender_email,
           msg.recipients, msg.date, msg.is_read, msg.labels,
-          msg.snippet || null
+          msg.snippet || null,
+          msg.message_id || null, msg.received_at || null
         );
         if (result.changes > 0) newIds.push(id);
       }

@@ -55,7 +55,11 @@ export async function fetchEnvelopes(account, limit = 500) {
         recipients: JSON.stringify(
           (msg.envelope.to || []).map(a => ({ name: a.name, email: a.address }))
         ),
-        date: msg.internalDate?.toISOString() || new Date().toISOString(),
+        // The mail's own Date header; INTERNALDATE is when the mailserver received it,
+        // which after a sync backlog can be weeks later.
+        date: (msg.envelope.date || msg.internalDate || new Date()).toISOString(),
+        received_at: msg.internalDate?.toISOString() || null,
+        message_id: msg.envelope.messageId || null,
         is_read: msg.flags.has('\\Seen') ? 1 : 0,
         labels: JSON.stringify([...msg.flags]),
       });
@@ -135,7 +139,11 @@ export async function fetchSince(account, sinceUid) {
         recipients: JSON.stringify(
           (msg.envelope.to || []).map(a => ({ name: a.name, email: a.address }))
         ),
-        date: msg.internalDate?.toISOString() || new Date().toISOString(),
+        // The mail's own Date header; INTERNALDATE is when the mailserver received it,
+        // which after a sync backlog can be weeks later.
+        date: (msg.envelope.date || msg.internalDate || new Date()).toISOString(),
+        received_at: msg.internalDate?.toISOString() || null,
+        message_id: msg.envelope.messageId || null,
         is_read: msg.flags.has('\\Seen') ? 1 : 0,
         labels: JSON.stringify([...msg.flags]),
       });
