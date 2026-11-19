@@ -27,7 +27,8 @@ export const SCORES = [
   ['ecc.reply_or_decision', 'Választ vagy döntést vár tőled a levél (személyesen tőled, nem körlevél).'],
   ['ecc.mandatory_appointment', 'Kötelező időpont: olyan időpontot rögzít, javasol, módosít vagy töröl, amelyen ott kell lenned, vagy amit vissza kell igazolnod.'],
   ['ecc.payment_due', 'Fizetned kell valamit (számla, díj, bírság, adó, lejárt tartozás). Már kifizetett nyugta vagy automatikus levonás: nem.'],
-  ['ecc.important', 'Összességében fontos-e neked ez a levél. Akkor is igen lehet, ha a fenti három egyike sem igaz; ilyenkor írd meg megjegyzésben, miért.'],
+  ['ecc.important', 'Összességében fontos: tenned kell vele valamit. Ha csak tudnod kell róla, az az ecc.want_to_know, és itt nem. Ha fontos, de a három szempont egyike sem illik rá, írd meg megjegyzésben, miért.'],
+  ['ecc.want_to_know', 'Tudnod kell róla, de nincs vele teendőd (pl. munkahelyi szál, amit követsz, számlázási változás, nyugta, iskolai esemény). Az „összességében fontos” csak akkor igen, ha tenned is kell valamit.'],
 ];
 
 const HOST = process.env.LANGFUSE_HOST;

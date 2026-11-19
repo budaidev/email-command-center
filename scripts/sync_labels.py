@@ -14,7 +14,7 @@ from pathlib import Path
 
 DOCKER = '/Volume1/@apps/DockerEngine/dockerd/bin/docker'
 DATASET = 'ecc-importance-labels'
-SCORES = ['ecc.reply_or_decision', 'ecc.mandatory_appointment', 'ecc.payment_due', 'ecc.important']
+SCORES = ['ecc.reply_or_decision', 'ecc.mandatory_appointment', 'ecc.payment_due', 'ecc.important', 'ecc.want_to_know']
 LOCAL_COPY = Path('/Volume1/docker/.cache/ecc-eval/labels.json')
 
 
