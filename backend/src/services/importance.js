@@ -50,15 +50,16 @@ function parseAnswer(raw, email) {
   };
 }
 
-async function evaluateOne(email, prompt) {
+/** One email, one call. `model` overrides the route (backtests compare models). */
+export async function evaluateOne(email, prompt, { model = IMPORTANCE_MODEL, tags = [] } = {}) {
   const version = promptLabel(prompt);
   const raw = await getJSON(prompt.text, buildEmailMessage(email), {
-    model: IMPORTANCE_MODEL,
+    model,
     maxTokens: 800,
     metadata: {
       trace_name: 'ecc-importance',
       generation_name: 'ecc-importance',
-      tags: ['app:email-command-center', `prompt:${version.replace(' ', ':')}`],
+      tags: ['app:email-command-center', `prompt:${version.replace(' ', ':')}`, ...tags],
       trace_metadata: {
         email_id: email.id,
         message_id: email.message_id || null,

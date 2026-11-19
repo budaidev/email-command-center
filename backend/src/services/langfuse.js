@@ -14,16 +14,18 @@ const TTL_MS = 5 * 60_000;
 
 const cache = new Map(); // key -> { at, value }
 
-/** Returns { text, name, version, source: 'langfuse' | 'local', error? } */
-export async function getTextPrompt(name, label, localText) {
-  const key = `${name}@${label}`;
+/** Returns { text, name, version, source: 'langfuse' | 'local', error? }.
+ *  A numeric `version` picks that version instead of the label (backtests). */
+export async function getTextPrompt(name, label, localText, { version } = {}) {
+  const key = version ? `${name}#${version}` : `${name}@${label}`;
+  const query = version ? `version=${encodeURIComponent(version)}` : `label=${encodeURIComponent(label)}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
 
   const local = { text: localText, name, version: null, source: 'local' };
   if (!HOST || !PK || !SK) return { ...local, error: 'Langfuse not configured' };
   try {
-    const res = await fetch(`${HOST}/api/public/v2/prompts/${encodeURIComponent(name)}?label=${encodeURIComponent(label)}`, {
+    const res = await fetch(`${HOST}/api/public/v2/prompts/${encodeURIComponent(name)}?${query}`, {
       headers: { Authorization: `Basic ${Buffer.from(`${PK}:${SK}`).toString('base64')}` },
       signal: AbortSignal.timeout(5000),
     });

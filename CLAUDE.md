@@ -68,7 +68,22 @@ The AI part of the triage score is three yes/no criteria with verbatim evidence 
 - **One call per email**, 3 in parallel. Each is a Langfuse trace named `ecc-importance` with tags `app:email-command-center`, `prompt:ecc-importance:vN` and metadata `email_id`, `message_id`, `prompt_version`. LiteLLM's OTEL callback does not set Langfuse's own prompt link or trace id; filter on those metadata/tags.
 - **Bodies**: the sync stores no body. `ensureBodies` fetches missing bodies from the local mailserver before evaluating and saves them in `emails.body_text`. Before 2026-11-18 the AI saw only sender and subject.
 - `triage_results.criteria` (JSON with `evidence_found`: false when the quote is not in the email), `important`, `prompt_version`. The Today card shows them (`TriageCriteria.tsx`).
-- `runBacktest` (Triage page) still uses the old 0-50 prompt; card #241 replaces it with Langfuse experiments.
+- `runBacktest` (Triage page) still uses the old 0-50 prompt. The real backtest is `src/scripts/backtest.js` (below).
+
+## Backtest (card #241)
+
+Ground truth: the owner's labels on the 70-email test set, Langfuse dataset `ecc-importance-labels` (active items; `scripts/sync_labels.py` copies annotation-queue labels into the items' expected output; corrections posted over the API are marked `corrected`).
+
+```bash
+docker exec email-command-center-backend node --env-file=/app/.env src/scripts/backtest.js \
+  --model email-llm [--prompt-version N | --prompt-label candidate] [--limit N]
+docker exec email-command-center-backend node --env-file=/app/.env src/scripts/backtest.js --compare RUN_A RUN_B
+```
+
+- A run is a Langfuse **experiment** on the dataset (Datasets → `ecc-importance-labels` → Runs). Langfuse v4 events-only ignores `POST /api/public/dataset-run-items`; experiments are declared as `langfuse.experiment.*` attributes on OTel spans (environment `ecc-backtest`).
+- Results with every answer: `backend/data/backtests/<run>.json`. The pre-#239 triage (score >= 50, from `data/email-center.backup-2026-11-18.db`) is printed as the old-system baseline.
+- `--compare` gives the confidence tiers: sure (both models agree, all quotes found), likely (agree, a quote missing), doubtful (disagree).
+- cli-proxy returns 500 on its short-term limit and LiteLLM then cools the route for 60 s; the script runs one call at a time and waits 70 s on 429/500. `email-llm-strong` (GPT-6.2 Sol) is the second model.
 
 ## Network
 
