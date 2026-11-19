@@ -43,16 +43,19 @@ def trace_id(email_id):  # same as build-label-set.js
 def main():
     dry = '--dry-run' in sys.argv
     names = ','.join(f"'{n}'" for n in SCORES)
-    # Latest non-deleted annotation per (trace, score name).
-    sql = f"""SELECT trace_id, name, argMax(value, event_ts), argMax(comment, event_ts), max(timestamp)
-              FROM scores WHERE project_id = 'litellm' AND name IN ({names}) AND source = 'ANNOTATION' AND is_deleted = 0
+    # Latest non-deleted label per (trace, score name): the owner's annotations, and
+    # corrections posted over the API (source API, listed under 'corrected').
+    sql = f"""SELECT trace_id, name, argMax(value, event_ts), argMax(comment, event_ts), max(timestamp), argMax(source, event_ts)
+              FROM scores WHERE project_id = 'litellm' AND name IN ({names}) AND source IN ('ANNOTATION', 'API') AND is_deleted = 0
               GROUP BY trace_id, name FORMAT JSONCompact"""
     out = subprocess.run([DOCKER, 'exec', 'langfuse-clickhouse', 'clickhouse-client', '--user', 'clickhouse',
                           '--password', ch_pw, '-q', sql], check=True, capture_output=True, text=True).stdout
     labels = {}
-    for tid, name, value, comment, ts in json.loads(out)['data']:
+    for tid, name, value, comment, ts, source in json.loads(out)['data']:
         d = labels.setdefault(tid, {})
         d[name.removeprefix('ecc.')] = bool(value)
+        if source == 'API':
+            d.setdefault('corrected', []).append(name.removeprefix('ecc.'))
         if comment:
             d.setdefault('comments', {})[name.removeprefix('ecc.')] = comment
         d['labelled_at'] = max(d.get('labelled_at', ''), ts)
