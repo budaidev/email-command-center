@@ -11,6 +11,8 @@ services:
     volumes:
       - ./backend/data:/app/data
       - ./backend/.env:/app/.env:ro
+      # Card #246: the owner's sent-mail header index (written by mailserver/config/gmail_sync.py)
+      - ../mailserver/mail-state/lib-fetchmail:/app/mailstate:ro
     networks:
       - paperless-net
     restart: unless-stopped

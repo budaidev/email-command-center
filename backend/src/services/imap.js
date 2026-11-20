@@ -109,10 +109,36 @@ export async function fetchMessage(account, uid) {
   }
 }
 
+const META_HEADERS = ['list-unsubscribe', 'list-id', 'precedence', 'auto-submitted', 'feedback-id', 'x-campaign-id',
+  'x-mailgun-tag', 'x-sg-eid', 'in-reply-to', 'references', 'x-github-reason'];
+
+/** What services/signals.js needs from a parsed message besides the body. */
+function messageMeta(parsed) {
+  const headers = {};
+  for (const name of META_HEADERS) {
+    const v = parsed.headers.get(name);
+    if (v === undefined || v === null) continue;
+    headers[name] = typeof v === 'string' ? v : (v.text ?? v.value ?? JSON.stringify(v));
+    if (Array.isArray(headers[name])) headers[name] = headers[name].join(' ');
+    headers[name] = String(headers[name]).slice(0, 500);
+  }
+  // mailparser folds List-* headers into one structured "list" header.
+  const listHeader = parsed.headers.get('list') || {};
+  if (listHeader.unsubscribe) headers['list-unsubscribe'] = JSON.stringify(listHeader.unsubscribe).slice(0, 500);
+  if (listHeader.id) headers['list-id'] = JSON.stringify(listHeader.id).slice(0, 500);
+  const list = a => (a ? (Array.isArray(a) ? a : [a]).flatMap(x => x.value || []).map(x => x.address).filter(Boolean) : []);
+  return {
+    headers,
+    to: list(parsed.to),
+    cc: list(parsed.cc),
+    attachments: (parsed.attachments || []).map(a => ({ filename: a.filename || null, contentType: a.contentType || null })),
+  };
+}
+
 /**
- * Plain-text bodies for several INBOX uids over one connection (card #239: the
+ * Plain-text bodies (and header meta for the signals) for several INBOX uids over one connection (card #239: the
  * importance evaluation reads the body, which the sync does not store).
- * Returns Map(uid -> { body_text, snippet }).
+ * Returns Map(uid -> { body_text, snippet, meta }).
  */
 export async function fetchBodies(account, uids) {
   const out = new Map();
@@ -128,7 +154,7 @@ export async function fetchBodies(account, uids) {
         text = parsed.html.replace(/<(style|script)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ')
           .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n');
       }
-      out.set(msg.uid, { body_text: text, snippet: text.slice(0, 200).replace(/\s+/g, ' ').trim() });
+      out.set(msg.uid, { body_text: text, snippet: text.slice(0, 200).replace(/\s+/g, ' ').trim(), meta: messageMeta(parsed) });
     }
   } finally {
     await client.logout().catch(() => {});

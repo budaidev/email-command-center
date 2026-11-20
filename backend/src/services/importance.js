@@ -5,9 +5,8 @@
  * and Message-ID, so a human label can later be attached to it (card #240).
  */
 
-import db from '../db.js';
 import { getJSON } from './llm.js';
-import { fetchBodies } from './imap.js';
+import { prepareEmails } from './signals.js';
 import { getTextPrompt } from './langfuse.js';
 import { IMPORTANCE_PROMPT_NAME, LOCAL_SYSTEM, CRITERIA, buildEmailMessage } from '../prompts/importance.js';
 
@@ -72,35 +71,8 @@ export async function evaluateOne(email, prompt, { model = IMPORTANCE_MODEL, tag
   return parseAnswer(raw, email);
 }
 
-/** Fill body_text (and snippet) of emails that lack it from the local mailserver,
- *  and store it. Rows need account_id and uid. Failures leave the body empty. */
-export async function ensureBodies(emails) {
-  const missing = emails.filter(e => !(e.body_text && e.body_text.trim()) && e.account_id && e.uid);
-  const byAccount = new Map();
-  for (const e of missing) {
-    if (!byAccount.has(e.account_id)) byAccount.set(e.account_id, []);
-    byAccount.get(e.account_id).push(e);
-  }
-  const save = db.prepare('UPDATE emails SET body_text = ?, snippet = COALESCE(NULLIF(snippet, \'\'), ?) WHERE id = ?');
-  for (const [accountId, list] of byAccount) {
-    const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId);
-    if (!account) continue;
-    try {
-      const bodies = await fetchBodies(account, list.map(e => e.uid));
-      db.transaction(() => {
-        for (const e of list) {
-          const b = bodies.get(e.uid);
-          if (!b) continue;
-          e.body_text = b.body_text;
-          e.snippet = e.snippet || b.snippet;
-          save.run(b.body_text, b.snippet, e.id);
-        }
-      })();
-    } catch (err) {
-      console.warn(`[Importance] could not fetch bodies for ${accountId}: ${err.message}`);
-    }
-  }
-}
+/** Kept for callers from card #240: bodies now come with the signals (card #246). */
+export const ensureBodies = prepareEmails;
 
 /**
  * Evaluate emails (rows with id, account_id, uid, subject, sender_*, recipients,
@@ -108,7 +80,7 @@ export async function ensureBodies(emails) {
  * Returns { results: Map(id -> evaluation | {error}), promptVersion, model }.
  */
 export async function evaluateImportance(emails) {
-  await ensureBodies(emails);
+  await prepareEmails(emails);
   const prompt = await getTextPrompt(IMPORTANCE_PROMPT_NAME, PROMPT_LABEL, LOCAL_SYSTEM);
   const results = new Map();
   let next = 0;
