@@ -1,6 +1,6 @@
 /** The review list (card #242). UI: "Átnézés" page. */
 import { Router } from 'express';
-import { counts, list, decide, undo } from '../services/review.js';
+import { counts, list, decide, undo, decideMany, undoMany } from '../services/review.js';
 
 const router = Router();
 const wrap = fn => async (req, res, next) => {
@@ -8,7 +8,9 @@ const wrap = fn => async (req, res, next) => {
 };
 
 router.get('/counts', wrap(() => counts()));
-router.get('/:list', wrap(req => list(req.params.list, { limit: req.query.limit })));
+router.post('/bulk', wrap(req => decideMany(req.body?.ids, req.body || {})));
+router.post('/bulk/undo', wrap(req => undoMany(req.body?.ids || [])));
+router.get('/:list', wrap(req => list(req.params.list, { limit: req.query.limit, all: req.query.all === '1' })));
 router.post('/:emailId', wrap(req => decide(req.params.emailId, req.body || {})));
 router.delete('/:emailId', wrap(req => undo(req.params.emailId)));
 

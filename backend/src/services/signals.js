@@ -13,7 +13,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import db from '../db.js';
 import { fetchBodies } from './imap.js';
 
-export const SIGNALS_VERSION = 3; // 2: owner's history from the sent-mail index; 3: security alert, verification code
+export const SIGNALS_VERSION = 4; // 2: owner's history from the sent-mail index; 3: security alert, verification code; 4: list_id_value, github_repo
 
 
 const OWNER = new Set((process.env.OWNER_ADDRESSES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
@@ -89,6 +89,13 @@ function ownText(body) {
   return out.join('\n');
 }
 
+function listIdOf(raw) {
+  if (!raw) return null;
+  let v = raw;
+  try { const o = JSON.parse(raw); v = typeof o === 'string' ? o : (o.id || o.name || raw); } catch { /* plain header */ }
+  return String(v).replace(/[<>"]/g, '').trim().toLowerCase().slice(0, 200) || null;
+}
+
 function history(email, h) {
   const idx = sentIndex();
   if (!idx) return { owner_wrote_to_sender_before: null, owner_replied_in_thread_before: null };
@@ -120,6 +127,8 @@ export function computeSignals(email, meta) {
     // Bulk / automated
     list_unsubscribe: !!h['list-unsubscribe'],
     list_id: !!h['list-id'],
+    // The list's id, e.g. dev.fineract.apache.org (mailparser gives {id, name} as JSON).
+    list_id_value: listIdOf(h['list-id']),
     precedence_bulk: /bulk|list|junk/i.test(h.precedence || ''),
     auto_submitted: !!h['auto-submitted'] && !/^no$/i.test(h['auto-submitted']),
     esp_feedback_id: !!h['feedback-id'] || !!h['x-campaign-id'] || !!h['x-mailgun-tag'] || !!h['x-sg-eid'],
@@ -138,6 +147,7 @@ export function computeSignals(email, meta) {
     is_reply: /^\s*(re|vá|válasz|aw)\s*:/i.test(subject) || !!h['in-reply-to'],
     is_forward: /^\s*(fwd?|továbbítás|tov)\s*:/i.test(subject),
     github_reason: h['x-github-reason'] || null,
+    github_repo: (subject.match(/^(?:re:\s*)?\[([\w.-]+\/[\w.-]+)\]/i) || [])[1]?.toLowerCase() || null,
     // Content (this message only, not the quoted thread)
     kw_payment: has(KEYWORDS.payment),
     kw_receipt: has(KEYWORDS.receipt),

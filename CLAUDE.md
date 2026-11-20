@@ -109,9 +109,10 @@ Triage → Workbench → "Döntési szabályok" (`TriageDecisionRules.tsx`, API 
 - **Teendő**: `important = 1`. "TODO-ba" creates a Vikunja task in the GTD inbox (project 1) with the why and a link back to the email, and sets `emails.gtd_task_id`; "Nem kell" dismisses.
 - **Tudni akarom**: `important = 0 AND want_to_know = 1`. Set by `want_to_know` rules (no LLM call), or by the LLM once the prompt returns `want_to_know` (the v1 prompt does not: NULL).
 - **Bizonytalan**: the LLM decided and the signal score contradicts it by 10+ points (at most 15). A draft score model scores every email (stored in `criteria.score`) without deciding; only an active one decides.
-- Undo deletes the `email_review` row; a created Vikunja task stays.
+- **Fineract**: everything about Apache Fineract (subject or sender contains "fineract", `list_id_value` e.g. `dev.fineract.apache.org`, or `github_repo` e.g. `apache/fineract`) is taken out of the three lists above and shown on its own tab: important, want_to_know and unsure by default, every undecided one with `?all=1`. "Mind láttam" marks the shown page seen (`POST /api/review/bulk`).
+- Undo deletes the `email_review` row(s); a created Vikunja task stays.
 
-Signals v3 added `kw_security` (body+subject) and `kw_verification_code` (subject only: "OTP" in bodies is a bank). Draft rules "Biztonsági riasztás" (want_to_know) and "Ellenőrző kód" (not_important) run before HARD v1 (`sort_order`).
+Signals v4 added `list_id_value` and `github_repo` (from the subject's `[owner/repo]`); v3 added `kw_security` (body+subject) and `kw_verification_code` (subject only: "OTP" in bodies is a bank). Draft rules "Biztonsági riasztás" (want_to_know) and "Ellenőrző kód" (not_important) run before HARD v1 (`sort_order`).
 
 Joined `paperless-ai-dev_paperless-net` (external) instead of creating its own bridge — the NAS Docker subnet pool was full when the project was added. If recreating from scratch and you need a fresh bridge, free a subnet first or stay on the shared network.
 

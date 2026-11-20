@@ -24,6 +24,7 @@ const TABS: { key: ReviewList; label: string; hint: string }[] = [
   { key: 'todo', label: 'Teendő', hint: 'Válasz, döntés, kötelező időpont vagy fizetés. TODO-ba teszed, vagy elveted.' },
   { key: 'know', label: 'Tudni akarom', hint: 'Nincs teendő, csak tudnod kell róla. Átfutod, és „Láttam”.' },
   { key: 'unsure', label: 'Bizonytalan', hint: 'Az LLM és a pontozás nem ért egyet (legfeljebb 15). Te döntesz.' },
+  { key: 'fineract', label: 'Fineract', hint: 'Minden Fineract-levél (dev lista, GitHub, Jira) külön, a többi fülről kivéve.' },
 ]
 const CRITERION: Record<string, string> = {
   reply_or_decision: 'válasz / döntés', mandatory_appointment: 'kötelező időpont', payment_due: 'fizetés',
@@ -34,8 +35,10 @@ export function ReviewView() {
   const [tab, setTab] = useState<ReviewList>('todo')
   const qc = useQueryClient()
   const counts = useQuery({ queryKey: ['review-counts'], queryFn: api.getReviewCounts, refetchInterval: 60_000 })
-  const items = useQuery({ queryKey: ['review', tab], queryFn: () => api.getReviewList(tab), refetchInterval: 60_000 })
-  const [last, setLast] = useState<{ id: string; subject: string; text: string } | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const all = tab === 'fineract' && showAll
+  const items = useQuery({ queryKey: ['review', tab, all], queryFn: () => api.getReviewList(tab, all), refetchInterval: 60_000 })
+  const [last, setLast] = useState<{ ids: string[]; subject: string; text: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = () => {
@@ -43,8 +46,14 @@ export function ReviewView() {
     qc.invalidateQueries({ queryKey: ['review-counts'] })
   }
   const undoM = useMutation({
-    mutationFn: (id: string) => api.undoReview(id),
+    mutationFn: (ids: string[]) => api.undoReviewMany(ids),
     onSuccess: () => { setLast(null); refresh() },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const bulkM = useMutation({
+    mutationFn: (ids: string[]) => api.decideReviewMany(ids, tab, 'seen'),
+    onSuccess: r => { setLast({ ids: r.ids, subject: `${r.ids.length} levél`, text: 'Láttam' }); setError(null); refresh() },
     onError: (e: Error) => setError(e.message),
   })
 
@@ -71,13 +80,25 @@ export function ReviewView() {
             )
           })}
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 14 }}>{TABS.find(t => t.key === tab)!.hint}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--text-3)', marginBottom: 14 }}>
+          <span style={{ flex: 1 }}>{TABS.find(t => t.key === tab)!.hint}</span>
+          {tab === 'fineract' && (
+            <button style={btn} onClick={() => setShowAll(v => !v)}>
+              {showAll ? 'Csak a fontosak' : `Összes (${counts.data?.fineract_all ?? '…'})`}
+            </button>
+          )}
+          {(tab === 'fineract' || tab === 'know') && !!items.data?.length && (
+            <button style={btn} disabled={bulkM.isPending} onClick={() => bulkM.mutate(items.data!.map(i => i.id))}>
+              {bulkM.isPending ? <Loader2 size={13} className="spin" /> : <Eye size={13} />} Mind láttam ({items.data.length})
+            </button>
+          )}
+        </div>
 
         {last && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 12, fontSize: 12,
             background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 8 }}>
             <span style={{ flex: 1 }}>{last.text}: <b>{last.subject}</b></span>
-            <button style={btn} onClick={() => undoM.mutate(last.id)} disabled={undoM.isPending}><Undo2 size={13} /> Visszavon</button>
+            <button style={btn} onClick={() => undoM.mutate(last.ids)} disabled={undoM.isPending}><Undo2 size={13} /> Visszavon</button>
           </div>
         )}
         {error && (
@@ -96,7 +117,7 @@ export function ReviewView() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {items.data?.map(item => (
             <ReviewCard key={item.id} item={item} list={tab}
-              onDone={(text) => { setLast({ id: item.id, subject: item.subject, text }); setError(null); refresh() }}
+              onDone={(text) => { setLast({ ids: [item.id], subject: item.subject, text }); setError(null); refresh() }}
               onError={setError} />
           ))}
         </div>
@@ -111,7 +132,7 @@ function ReviewCard({ item, list, onDone, onError }: {
   const navigate = useNavigate()
   const [title, setTitle] = useState(item.suggested_task || item.subject)
   const [due, setDue] = useState('')
-  const [taskOpen, setTaskOpen] = useState(list !== 'know')
+  const [taskOpen, setTaskOpen] = useState(list !== 'know' && (list !== 'fineract' || item.important))
   const decideM = useMutation({
     mutationFn: (decision: 'todo' | 'dismissed' | 'seen') =>
       api.decideReview(item.id, { list, decision, ...(decision === 'todo' ? { title, due: due || undefined } : {}) }),
@@ -144,7 +165,7 @@ function ReviewCard({ item, list, onDone, onError }: {
           ))}
         </div>
       )}
-      {list === 'unsure' && item.score && (
+      {(list === 'unsure' || list === 'fineract') && item.score && (
         <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 6 }}>
           LLM: <b>{item.important ? 'fontos' : 'nem fontos'}</b>; pontozás: {item.score.breakdown.slice(0, 3).map(b => `${b.points > 0 ? '+' : ''}${b.points} ${b.label}`).join(', ')}
         </div>
@@ -163,7 +184,7 @@ function ReviewCard({ item, list, onDone, onError }: {
         ) : (
           <button style={btn} disabled={busy} onClick={() => setTaskOpen(true)}><CheckSquare size={13} /> Mégis TODO</button>
         )}
-        {list === 'know'
+        {list === 'know' || (list === 'fineract' && !item.important)
           ? <button style={list === 'know' && !taskOpen ? primary : btn} disabled={busy} onClick={() => decideM.mutate('seen')}><Eye size={13} /> Láttam</button>
           : <button style={btn} disabled={busy} onClick={() => decideM.mutate('dismissed')}><X size={13} /> Nem kell</button>}
       </div>

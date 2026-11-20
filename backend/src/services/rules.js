@@ -55,6 +55,8 @@ export const FIELDS = [
   ['sender_email', STR, 'Feladó címe'],
   ['subject', STR, 'Tárgy'],
   ['github_reason', STR, 'GitHub: miért kaptad (X-GitHub-Reason)'],
+  ['github_repo', STR, 'GitHub: repó (tárgyból, pl. apache/fineract)'],
+  ['list_id_value', STR, 'Levelezőlista azonosítója (List-Id)'],
   ['recipient_count', NUM, 'Címzettek száma (To+Cc)'],
   ['any_of', 'boolset', 'Bármelyik igaz ezek közül…'],
 ].map(([key, type, label]) => ({ key, type, label }));

@@ -488,7 +488,7 @@ export interface RulesResponse {
 export interface DomainCategory { domain: string; category: string; emails: number }
 
 // ─── Review list (card #242) ───
-export type ReviewList = 'todo' | 'know' | 'unsure'
+export type ReviewList = 'todo' | 'know' | 'unsure' | 'fineract'
 export interface ReviewItem {
   id: string; subject: string; sender_name: string | null; sender_email: string; date: string; snippet: string | null;
   important: boolean; want_to_know: boolean | null; why: string | null; suggested_task: string | null;
@@ -497,7 +497,7 @@ export interface ReviewItem {
   score: { points: number; probability: number; breakdown: { key: string; label: string; points: number }[] } | null;
   evidence: { criterion: string; quote: string; found: boolean | null }[];
 }
-export interface ReviewCounts { todo: number; know: number; unsure: number; decided: Record<string, number> }
+export interface ReviewCounts { todo: number; know: number; unsure: number; fineract: number; fineract_all: number; decided: Record<string, number> }
 
 // ─── Points per signal (card #246) ───
 export interface ScoreFeature { learned: number; override: number | null; share: number }
@@ -737,7 +737,10 @@ export const api = {
   getPipelineStatus: () =>
     apiRequest<PipelineStatus>('/pipeline/status'),
   getReviewCounts: () => apiRequest<ReviewCounts>('/review/counts'),
-  getReviewList: (list: ReviewList) => apiRequest<ReviewItem[]>(`/review/${list}`),
+  getReviewList: (list: ReviewList, all = false) => apiRequest<ReviewItem[]>(`/review/${list}${all ? '?all=1' : ''}`),
+  decideReviewMany: (ids: string[], list: ReviewList, decision: 'seen' | 'dismissed') =>
+    apiRequest<{ ids: string[] }>('/review/bulk', { method: 'POST', body: { ids, list, decision } }),
+  undoReviewMany: (ids: string[]) => apiRequest<{ ids: string[] }>('/review/bulk/undo', { method: 'POST', body: { ids } }),
   decideReview: (emailId: string, body: { list: ReviewList; decision: 'todo' | 'dismissed' | 'seen'; title?: string; due?: string }) =>
     apiRequest<{ email_id: string; decision: string; task_id: string | null }>(`/review/${emailId}`, { method: 'POST', body }),
   undoReview: (emailId: string) => apiRequest<{ email_id: string }>(`/review/${emailId}`, { method: 'DELETE' }),
