@@ -40,3 +40,6 @@ backend/data/backtests/
 backend/data/*.json
 *.bak-*
 backend/data/llm-checks/
+
+# The owner's own domain categories (personal: banks, insurers, school)
+backend/data/*.local.sql
