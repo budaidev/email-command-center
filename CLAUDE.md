@@ -69,6 +69,7 @@ The AI part of the triage score is three yes/no criteria with verbatim evidence 
 - **Bodies**: the sync stores no body. `ensureBodies` fetches missing bodies from the local mailserver before evaluating and saves them in `emails.body_text`. Before 2026-11-18 the AI saw only sender and subject.
 - `triage_results.criteria` (JSON with `evidence_found`: false when the quote is not in the email), `important`, `prompt_version`. The Today card shows them (`TriageCriteria.tsx`).
 - **Prompt v2** (production since 2026-11-20) also returns `want_to_know` (forced false when important) and `due` (the stated deadline, `YYYY-MM-DD`, kept only when important; stored as `criteria.due`). It counts personal mail from real people (recruiters, accountant, teachers), portal "new document" notices, forwarded bills and parcel pickups as important, and code-hosting/list notifications as at most want_to_know. It was written from v1's misses on the same 70 labels, so its backtest score (Luna 98.6%, Sol 100% on important) is optimistic; the Átnézés decisions are the fresh check.
+- **Live model** `email-llm-strong` (GPT-6.2 Sol, `LLM_IMPORTANCE_MODEL`, since 2026-11-20). It hits cli-proxy's short-term limit after ~150 quick calls: each call waits 70 s and retries up to 3 times on 429/500, and an hourly cron (:17) re-runs `not_evaluated` emails of the last 3 days.
 - `runBacktest` (Triage page) still uses the old 0-50 prompt. The real backtest is `src/scripts/backtest.js` (below).
 
 ## Backtest (card #241)

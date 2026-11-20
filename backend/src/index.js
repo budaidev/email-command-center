@@ -21,6 +21,8 @@ import calendarEventsRouter from './routes/calendar-events.js';
 import categoryActionsRouter from './routes/category-actions.js';
 import tasksRouter from './routes/tasks.js';
 import triageRouter from './routes/triage.js';
+import db from './db.js';
+import { triageEmails } from './services/triage.js';
 import rulesRouter from './routes/rules.js';
 import scoringRouter from './routes/scoring.js';
 import reviewRouter from './routes/review.js';
@@ -81,6 +83,15 @@ const server = app.listen(port, async () => {
     console.log('[Cron] Running fallback sync...');
     syncAll().catch(console.error);
     syncAllCalendars().catch(console.error);
+  });
+  // Hourly: retry emails of the last 3 days whose evaluation failed (LLM limit or outage).
+  cron.schedule('17 * * * *', () => {
+    const ids = db.prepare(`SELECT t.email_id AS id FROM triage_results t JOIN emails e ON e.id = t.email_id
+      WHERE t.status = 'not_evaluated' AND t.error IS NOT NULL AND e.date >= datetime('now', '-3 days') LIMIT 50`).all().map(r => r.id);
+    if (ids.length) {
+      console.log(`[Cron] Retrying ${ids.length} failed evaluations`);
+      triageEmails(ids, true).catch(console.error);
+    }
   });
   // Daily digest cron at 2:00 AM
   cron.schedule('0 2 * * *', () => {

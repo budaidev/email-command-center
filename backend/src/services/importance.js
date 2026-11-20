@@ -77,6 +77,21 @@ export async function evaluateOne(email, prompt, { model = IMPORTANCE_MODEL, tag
   return parseAnswer(raw, email);
 }
 
+// cli-proxy answers 500 on the subscription's short-term limit and LiteLLM then
+// cools the route down for 60 s (429): wait it out instead of losing the email.
+const RETRY_WAIT_MS = Number(process.env.IMPORTANCE_RETRY_WAIT_MS || 70_000);
+const RETRIES = 3;
+async function evaluateWithRetry(email, prompt) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await evaluateOne(email, prompt);
+    } catch (err) {
+      if (attempt >= RETRIES || !/\b(429|500|502|503)\b/.test(err.message)) throw err;
+      await new Promise(r => setTimeout(r, RETRY_WAIT_MS));
+    }
+  }
+}
+
 /** Kept for callers from card #240: bodies now come with the signals (card #246). */
 export const ensureBodies = prepareEmails;
 
@@ -107,7 +122,7 @@ export async function evaluateImportance(emails) {
     while (next < forLlm.length) {
       const email = forLlm[next++];
       try {
-        const ev = await evaluateOne(email, prompt);
+        const ev = await evaluateWithRetry(email, prompt);
         const rule = ruled.get(email.id);
         const score = scores.get(email.id);
         if (rule?.verdict === 'important' && !ev.important) {
