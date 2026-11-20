@@ -224,12 +224,12 @@ async function scoreStep(emailIds, config) {
       upsert.run(
         email.id, finalScore, ruleResult.ruleScore, aiScore,
         JSON.stringify(ruleResult.matchedRules),
-        actionType, ok ? ev.why : null, ok ? ev.suggested_task : null, model,
+        actionType, ok ? ev.why : null, ok ? ev.suggested_task : null, (ok && ev.model) || model,
         evaluated ? 'evaluated' : 'not_evaluated',
         evaluated ? null : (ev?.error || 'No AI answer'),
         ok ? (ev.important ? 1 : 0) : null,
         ok ? JSON.stringify({ ...ev.criteria, kind: ev.kind }) : null,
-        aiEnabled ? promptVersion : null,
+        aiEnabled ? ((ok && ev.prompt_version) || promptVersion) : null,
       );
 
       // Also store in enrichments

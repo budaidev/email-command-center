@@ -12,7 +12,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import db from '../db.js';
 import { fetchBodies } from './imap.js';
-import DOMAINS from '../config/signal-domains.js';
 
 export const SIGNALS_VERSION = 2; // 2: owner's history from the sent-mail index
 
@@ -62,12 +61,16 @@ const KEYWORDS = {
 const addr = a => String(a || '').toLowerCase().trim();
 const domainOf = a => addr(a).split('@')[1] || '';
 
-/** Category of a sender domain from config/signal-domains.js (suffix match). */
-function domainCategory(domain) {
-  for (const [cat, list] of Object.entries(DOMAINS)) {
-    if (list.some(d => domain === d || domain.endsWith(`.${d}`))) return cat;
-  }
-  return null;
+// Sender domain categories, edited in the UI (table domain_categories, card #247).
+let domainCache = null;
+export function invalidateDomainCategories() { domainCache = null; }
+
+/** Category of a sender domain (suffix match: "example.hu" covers "x.example.hu"), or null. */
+export function domainCategoryOf(domain) {
+  if (!domainCache) domainCache = db.prepare('SELECT domain, category FROM domain_categories').all();
+  const d = String(domain || '').toLowerCase();
+  const hit = domainCache.find(r => d === r.domain || d.endsWith(`.${r.domain}`));
+  return hit ? hit.category : null;
 }
 
 /** The body without quoted earlier messages, so keywords come from this message only. */
@@ -121,7 +124,7 @@ export function computeSignals(email, meta) {
     unsubscribe_text: has(KEYWORDS.unsubscribe_text),
     // Who sent it, to whom
     sender_domain: domain,
-    domain_category: domainCategory(domain),
+    domain_category: domainCategoryOf(domain), // stored for reference; rules use the live table
     freemail_sender: FREEMAIL.has(domain),
     owner_in_to: to.some(a => OWNER.has(a)),
     owner_in_cc_only: !to.some(a => OWNER.has(a)) && cc.some(a => OWNER.has(a)),

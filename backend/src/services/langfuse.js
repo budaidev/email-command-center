@@ -42,3 +42,17 @@ export async function getTextPrompt(name, label, localText, { version } = {}) {
     return { ...local, error: err.message };
   }
 }
+
+/** Plain public-API call (datasets, scores…). Throws with the status on failure. */
+export async function langfuseApi(method, path, body) {
+  if (!HOST || !PK || !SK) throw new Error('Langfuse not configured');
+  const res = await fetch(`${HOST}${path}`, {
+    method,
+    headers: { Authorization: `Basic ${Buffer.from(`${PK}:${SK}`).toString('base64')}`, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(30_000),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Langfuse ${method} ${path}: HTTP ${res.status} ${text.slice(0, 200)}`);
+  return text ? JSON.parse(text) : null;
+}

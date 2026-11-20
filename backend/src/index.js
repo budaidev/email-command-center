@@ -21,6 +21,7 @@ import calendarEventsRouter from './routes/calendar-events.js';
 import categoryActionsRouter from './routes/category-actions.js';
 import tasksRouter from './routes/tasks.js';
 import triageRouter from './routes/triage.js';
+import rulesRouter from './routes/rules.js';
 import pipelineRouter from './routes/pipeline.js';
 import { syncAll, startAllIdleWatchers, stopAllIdleWatchers } from './services/sync.js';
 import { generateYesterdayDigest } from './services/daily-digest.js';
@@ -43,6 +44,7 @@ app.use('/api/calendar-events', calendarEventsRouter);
 app.use('/api/category-actions', categoryActionsRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/triage', triageRouter);
+app.use('/api/rules', rulesRouter);
 app.use('/api/pipeline', pipelineRouter);
 
 app.get('/api/health', (req, res) => {

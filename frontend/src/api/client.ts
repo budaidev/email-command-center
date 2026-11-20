@@ -466,6 +466,27 @@ export const TASK_CONTEXTS = [
   { id: 'read',   label: '@read',   color: 'oklch(0.68 0.08 80)' },
 ] as const;
 
+// ─── Decision rules (card #247) ───
+export interface RuleCondition { field: string; op: string; value?: string }
+export interface RuleField { key: string; type: 'bool' | 'string' | 'number' | 'boolset'; label: string }
+export interface RuleEmailRef { id: string; subject: string; sender: string; date: string; why?: string | null; labelled_important?: boolean; want_to_know?: boolean }
+export interface RuleLlmSource { source: string; evaluated: number; disagree: number; examples?: RuleEmailRef[] }
+export interface RuleBacktest {
+  at: string; verdict: string; total_emails: number; fires: number; coverage_pct: number;
+  labelled: { total: number; fires: number; wrong: number; of_class: number; caught_pct: number | null };
+  wrong?: RuleEmailRef[]; llm: RuleLlmSource[]; sample?: RuleEmailRef[];
+}
+export interface DecisionRule {
+  id: string; name: string; conditions: RuleCondition[]; verdict: 'not_important' | 'important';
+  status: 'draft' | 'active' | 'off'; note: string | null; sort_order: number;
+  last_backtest: RuleBacktest | null; created_at: string; updated_at: string;
+}
+export interface RulesResponse {
+  rules: DecisionRule[]; fields: RuleField[]; ops: Record<string, string[]>; verdicts: string[];
+  labels: { n: number; important: number | null; synced_at: string | null };
+}
+export interface DomainCategory { domain: string; category: string; emails: number }
+
 export const api = {
   // Accounts
   getAccounts: () => apiRequest<Account[]>('/accounts'),
@@ -643,6 +664,20 @@ export const api = {
     apiRequest<TriageBacktestResult>('/triage/backtest', { method: 'POST', body: data }),
 
   // Scoring Rules
+  // Decision rules (card #247)
+  getRules: () => apiRequest<RulesResponse>('/rules'),
+  createRule: (r: Partial<DecisionRule>) => apiRequest<DecisionRule>('/rules', { method: 'POST', body: r }),
+  updateRule: (id: string, r: Partial<DecisionRule>) => apiRequest<DecisionRule>(`/rules/${id}`, { method: 'PATCH', body: r }),
+  deleteRule: (id: string) => apiRequest<{ success: boolean }>(`/rules/${id}`, { method: 'DELETE' }),
+  backtestRule: (id: string) => apiRequest<RuleBacktest>(`/rules/${id}/backtest`, { method: 'POST' }),
+  backtestDraft: (r: { name?: string; conditions: RuleCondition[]; verdict: string }) =>
+    apiRequest<RuleBacktest>('/rules/backtest', { method: 'POST', body: r }),
+  syncLabels: () => apiRequest<RulesResponse['labels']>('/rules/labels/sync', { method: 'POST' }),
+  getDomainCategories: () => apiRequest<{ domains: DomainCategory[] }>('/rules/domains'),
+  setDomainCategory: (domain: string, category: string) =>
+    apiRequest<DomainCategory>(`/rules/domains/${encodeURIComponent(domain)}`, { method: 'PUT', body: { category } }),
+  deleteDomainCategory: (domain: string) =>
+    apiRequest<{ success: boolean }>(`/rules/domains/${encodeURIComponent(domain)}`, { method: 'DELETE' }),
   getScoringRules: () =>
     apiRequest<{ rules: ScoringRule[] }>('/triage/scoring-rules'),
   createScoringRule: (data: { field: string; operator: string; value: string; score: number; action_type?: string; label?: string }) =>

@@ -92,8 +92,15 @@ docker exec email-command-center-backend node --env-file=/app/.env src/scripts/b
 - Headers come from `imap.fetchBodies` meta. mailparser folds `List-*` headers into one structured `list` header: read that, not `list-unsubscribe`.
 - `OWNER_ADDRESSES` in `.env`: the owner's addresses (all Gmail accounts land in one mailbox).
 - Sender history (`owner_wrote_to_sender_before`, `owner_replied_in_thread_before`) comes from `/app/mailstate/sent_index.jsonl`, header-only records of the owner's sent Gmail mail written by `mailserver/config/gmail_sync.py` (mounted read-only from `mailserver/mail-state/lib-fetchmail`). Only mail sent before the email's date counts; whether the owner later replied must never be a signal.
-- Domain categories: `src/config/signal-domains.js`, a proposal for the owner to edit.
-- No hard rule decides anything in production yet.
+- Domain categories: table `domain_categories` (seeded with Claude's proposal), edited in the UI.
+
+## Decision rules (card #247)
+
+Triage → Workbench → "Döntési szabályok" (`TriageDecisionRules.tsx`, API `/api/rules`, `services/rules.js`, table `decision_rules`). Replaces the additive `scoring_rules` in the UI (that table and its pipeline code still exist, empty).
+
+- A rule: conditions over the signals and email fields (all must hold; `any_of` gives an OR over yes/no signals), a verdict and a status (draft/active/off). `not_important` rules answer without calling the LLM (`triage_results.prompt_version = "rule:<name>"`, model `rules`); `important` rules let the LLM run and override its verdict. Only active rules run; the first match by `sort_order` wins; emails without signals are never decided by a rule.
+- Backtest (button, `POST /api/rules/:id/backtest` or `/api/rules/backtest` for an unsaved draft): fires and errors on the owner's labels (`importance_labels`, synced from the Langfuse dataset with the "Címkék" button), coverage of all mail, disagreement with each LLM source (`data/backtests/*.json`, `data/llm-checks/*.json`, live `triage_results`), and a sample of hits. Activation is refused unless the exact saved definition was backtested; editing a rule clears its backtest.
+- Same numbers as `scripts/signal_report.py`.
 
 Joined `paperless-ai-dev_paperless-net` (external) instead of creating its own bridge — the NAS Docker subnet pool was full when the project was added. If recreating from scratch and you need a fresh bridge, free a subnet first or stay on the shared network.
 

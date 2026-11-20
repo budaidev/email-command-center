@@ -7,6 +7,7 @@
 
 import { getJSON } from './llm.js';
 import { prepareEmails } from './signals.js';
+import { decideByRules } from './rules.js';
 import { getTextPrompt } from './langfuse.js';
 import { IMPORTANCE_PROMPT_NAME, LOCAL_SYSTEM, CRITERIA, buildEmailMessage } from '../prompts/importance.js';
 
@@ -81,21 +82,51 @@ export const ensureBodies = prepareEmails;
  */
 export async function evaluateImportance(emails) {
   await prepareEmails(emails);
-  const prompt = await getTextPrompt(IMPORTANCE_PROMPT_NAME, PROMPT_LABEL, LOCAL_SYSTEM);
+  // Active decision rules (card #247): "not_important" ones answer without the LLM.
+  const ruled = decideByRules(emails);
   const results = new Map();
+  const forLlm = [];
+  for (const e of emails) {
+    const rule = ruled.get(e.id);
+    if (rule?.verdict === 'not_important') results.set(e.id, ruleAnswer(rule));
+    else forLlm.push(e);
+  }
+  const prompt = await getTextPrompt(IMPORTANCE_PROMPT_NAME, PROMPT_LABEL, LOCAL_SYSTEM);
   let next = 0;
   async function worker() {
-    while (next < emails.length) {
-      const email = emails[next++];
+    while (next < forLlm.length) {
+      const email = forLlm[next++];
       try {
-        results.set(email.id, await evaluateOne(email, prompt));
+        const ev = await evaluateOne(email, prompt);
+        const rule = ruled.get(email.id);
+        if (rule?.verdict === 'important' && !ev.important) {
+          // The rule overrides the LLM's verdict; its why and task are kept.
+          ev.important = true;
+          ev.prompt_version = `${promptLabel(prompt)} + rule:${rule.name}`;
+        }
+        results.set(email.id, ev);
       } catch (err) {
         results.set(email.id, { error: `LLM evaluation failed: ${err.message}`.slice(0, 300) });
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, emails.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, forLlm.length) }, worker));
+  if (ruled.size) console.log(`[Importance] ${emails.length - forLlm.length} of ${emails.length} decided by rules without the LLM`);
   return { results, promptVersion: promptLabel(prompt), model: IMPORTANCE_MODEL };
+}
+
+/** The stored answer for an email a "not_important" rule decided. */
+function ruleAnswer(rule) {
+  return {
+    important: false,
+    criteria: Object.fromEntries(CRITERIA.map(c => [c, { answer: false, evidence: '', evidence_found: null }])),
+    kind: null,
+    why: `Szabály döntött: ${rule.name}`,
+    action_type: 'none',
+    suggested_task: null,
+    prompt_version: `rule:${rule.name}`,
+    model: 'rules',
+  };
 }
 
 /** AI share of the 0-100 triage score: the rubric is yes/no, so 50 or 0. */
