@@ -36,3 +36,6 @@ logs/
 # Env backups (secrets)
 *.env.bak*
 .env.bak*
+backend/data/backtests/
+backend/data/*.json
+*.bak-*
