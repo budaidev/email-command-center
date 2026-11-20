@@ -86,13 +86,16 @@ export async function decide(emailId, { list: from, decision, title, due }) {
     if (email.gtd_task_id) throw Object.assign(new Error('Ehhez a levélhez már van feladat'), { status: 409 });
     if (!String(title || '').trim()) throw Object.assign(new Error('A feladatnak kell cím'), { status: 400 });
     const why = db.prepare('SELECT reason FROM triage_results WHERE email_id = ?').get(emailId)?.reason;
+    // Vikunja descriptions are HTML: escape, and make the link back clickable.
+    const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const url = `${APP_URL}/email/${email.id}`;
     const notes = [
-      `Levél: ${email.subject}`,
-      `Feladó: ${email.sender_name || ''} <${email.sender_email}>`,
-      `Dátum: ${email.date}`,
-      why ? `Miért: ${why}` : null,
-      `${APP_URL}/email/${email.id}`,
-    ].filter(Boolean).join('\n');
+      `<p><b>Levél:</b> ${esc(email.subject)}</p>`,
+      `<p><b>Feladó:</b> ${esc(email.sender_name || '')} (${esc(email.sender_email)})</p>`,
+      `<p><b>Dátum:</b> ${esc(email.date)}</p>`,
+      why ? `<p><b>Miért:</b> ${esc(why)}</p>` : null,
+      `<p><a href="${url}">Levél megnyitása</a></p>`,
+    ].filter(Boolean).join('');
     const task = await createTask({ title: String(title).trim(), notes, due: due || undefined, col: 'inbox' });
     taskId = String(task.id);
     db.prepare('UPDATE emails SET gtd_task_id = ? WHERE id = ?').run(taskId, emailId);
