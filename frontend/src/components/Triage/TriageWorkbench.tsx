@@ -1,6 +1,7 @@
 import { TriageConfig } from './TriageConfig'
 import { TriagePipeline } from './TriagePipeline'
 import { TriageDecisionRules } from './TriageDecisionRules'
+import { TriageSignalScore } from './TriageSignalScore'
 import { TriagePromptPreview } from './TriagePromptPreview'
 import { TriageFeedbackHistory } from './TriageFeedbackHistory'
 import { TriageBacktest } from './TriageBacktest'
@@ -50,6 +51,9 @@ export function TriageWorkbench() {
 
         {/* Section 3: Decision rules over deterministic signals (card #247; replaces the additive scoring rules) */}
         <TriageDecisionRules />
+
+        {/* Points per signal (card #246) */}
+        <TriageSignalScore />
 
         {/* Section 3: Prompt preview */}
         <TriagePromptPreview />

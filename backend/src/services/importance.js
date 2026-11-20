@@ -8,6 +8,7 @@
 import { getJSON } from './llm.js';
 import { prepareEmails } from './signals.js';
 import { decideByRules } from './rules.js';
+import { scoreForPipeline } from './signalscore.js';
 import { getTextPrompt } from './langfuse.js';
 import { IMPORTANCE_PROMPT_NAME, LOCAL_SYSTEM, CRITERIA, buildEmailMessage } from '../prompts/importance.js';
 
@@ -84,11 +85,16 @@ export async function evaluateImportance(emails) {
   await prepareEmails(emails);
   // Active decision rules (card #247): "not_important" ones answer without the LLM.
   const ruled = decideByRules(emails);
+  // Then the points per signal (card #246), when that model is active: a score at
+  // or below its low threshold also answers without the LLM.
+  const scores = scoreForPipeline(emails);
   const results = new Map();
   const forLlm = [];
   for (const e of emails) {
     const rule = ruled.get(e.id);
+    const score = scores.get(e.id);
     if (rule?.verdict === 'not_important') results.set(e.id, ruleAnswer(rule));
+    else if (!rule && score?.verdict === 'not_important') results.set(e.id, scoreAnswer(score));
     else forLlm.push(e);
   }
   const prompt = await getTextPrompt(IMPORTANCE_PROMPT_NAME, PROMPT_LABEL, LOCAL_SYSTEM);
@@ -99,11 +105,16 @@ export async function evaluateImportance(emails) {
       try {
         const ev = await evaluateOne(email, prompt);
         const rule = ruled.get(email.id);
+        const score = scores.get(email.id);
         if (rule?.verdict === 'important' && !ev.important) {
           // The rule overrides the LLM's verdict; its why and task are kept.
           ev.important = true;
           ev.prompt_version = `${promptLabel(prompt)} + rule:${rule.name}`;
+        } else if (!rule && score?.verdict === 'important' && !ev.important) {
+          ev.important = true;
+          ev.prompt_version = `${promptLabel(prompt)} + score:${score.points}`;
         }
+        if (score) ev.score = { points: score.points, probability: score.probability, breakdown: score.breakdown };
         results.set(email.id, ev);
       } catch (err) {
         results.set(email.id, { error: `LLM evaluation failed: ${err.message}`.slice(0, 300) });
@@ -111,8 +122,24 @@ export async function evaluateImportance(emails) {
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, forLlm.length) }, worker));
-  if (ruled.size) console.log(`[Importance] ${emails.length - forLlm.length} of ${emails.length} decided by rules without the LLM`);
+  if (emails.length > forLlm.length) console.log(`[Importance] ${emails.length - forLlm.length} of ${emails.length} decided by rules or points without the LLM`);
   return { results, promptVersion: promptLabel(prompt), model: IMPORTANCE_MODEL };
+}
+
+/** The stored answer for an email whose points are at or below the low threshold. */
+function scoreAnswer(score) {
+  const top = score.breakdown.slice(0, 3).map(b => `${b.points > 0 ? '+' : ''}${b.points} ${b.label}`).join(', ');
+  return {
+    important: false,
+    criteria: Object.fromEntries(CRITERIA.map(c => [c, { answer: false, evidence: '', evidence_found: null }])),
+    kind: null,
+    why: `Pontszám döntött: ${score.points} (${top})`,
+    action_type: 'none',
+    suggested_task: null,
+    prompt_version: `score:${score.points}`,
+    model: 'signal-score',
+    score: { points: score.points, probability: score.probability, breakdown: score.breakdown },
+  };
 }
 
 /** The stored answer for an email a "not_important" rule decided. */

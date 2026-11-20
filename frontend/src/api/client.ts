@@ -487,6 +487,23 @@ export interface RulesResponse {
 }
 export interface DomainCategory { domain: string; category: string; emails: number }
 
+// ─── Points per signal (card #246) ───
+export interface ScoreFeature { learned: number; override: number | null; share: number }
+export interface ScoreModel {
+  intercept: number; features: Record<string, ScoreFeature>; high: number; low: number;
+  status: 'draft' | 'active' | 'off'; training: { at: string; rows: number; positives: number; sources: string[] } | null;
+  last_backtest: ScoreBacktest | null; updated_at: string;
+}
+export interface ScoreEmailRef { id: string; subject: string; sender: string; points: number; labelled_important: boolean;
+  breakdown: { key: string; label: string; points: number }[] }
+export interface ScoreBacktest {
+  at: string; high: number; low: number;
+  all: { total: number; important: number; not_important: number };
+  labelled: { total: number; decided: number; wrong: number; important_decided: number; not_important_decided: number };
+  bands: { from: number | null; to: number | null; emails: number; labelled: number; important: number }[];
+  wrong?: ScoreEmailRef[]; near?: ScoreEmailRef[];
+}
+
 export const api = {
   // Accounts
   getAccounts: () => apiRequest<Account[]>('/accounts'),
@@ -664,6 +681,13 @@ export const api = {
     apiRequest<TriageBacktestResult>('/triage/backtest', { method: 'POST', body: data }),
 
   // Scoring Rules
+  // Points per signal (card #246)
+  getScoring: () => apiRequest<{ model: ScoreModel | null; features: { key: string; label: string }[] }>('/scoring'),
+  trainScoring: () => apiRequest<ScoreModel>('/scoring/train', { method: 'POST' }),
+  updateScoring: (b: { overrides?: Record<string, number | null>; high?: number; low?: number; status?: string }) =>
+    apiRequest<ScoreModel>('/scoring', { method: 'PATCH', body: b }),
+  backtestScoring: (b: { overrides?: Record<string, number | null>; high?: number; low?: number } = {}) =>
+    apiRequest<ScoreBacktest>('/scoring/backtest', { method: 'POST', body: b }),
   // Decision rules (card #247)
   getRules: () => apiRequest<RulesResponse>('/rules'),
   createRule: (r: Partial<DecisionRule>) => apiRequest<DecisionRule>('/rules', { method: 'POST', body: r }),

@@ -3,9 +3,11 @@
  *
  *   docker exec email-command-center-backend node --env-file=/app/.env src/scripts/llm-check.js IDS.json OUT.json [--model email-llm-strong]
  *
- * IDS.json: [email_id]. Writes [{email_id, important, criteria, why} | {email_id, error}].
+ * IDS.json: [email_id]. Writes { model, rows: [{email_id, important, criteria, why} | {email_id, error}] }
+ * every 25 emails, and resumes from OUT.json when it exists (rows with an error are retried).
+ * Files in /app/data/llm-checks/ are shown as an LLM source in the rule backtest (card #247).
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import db from '../db.js';
 import { evaluateOne } from '../services/importance.js';
 import { getTextPrompt } from '../services/langfuse.js';
@@ -19,8 +21,16 @@ const prompt = await getTextPrompt(IMPORTANCE_PROMPT_NAME, 'production', LOCAL_S
 const get = db.prepare(`SELECT id, account_id, uid, subject, sender_name, sender_email, recipients, date, snippet,
   body_text, message_id FROM emails WHERE id = ?`);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const out = [];
+const labelArg = process.argv.indexOf('--label');
+const sourceName = labelArg > 0 ? process.argv[labelArg + 1] : model;
+const prev = existsSync(outFile) ? JSON.parse(readFileSync(outFile, 'utf8')) : null;
+const out = (prev?.rows || prev || []).filter(r => !r.error);
+const done = new Set(out.map(r => r.email_id));
+const save = () => writeFileSync(outFile, JSON.stringify({ model: sourceName, rows: out }, null, 1));
+let n = 0;
 for (const id of ids) {
+  if (done.has(id)) continue;
+  if (++n % 25 === 0) save();
   const email = get.get(id);
   for (let attempt = 0; ; attempt++) {
     try {
@@ -37,6 +47,6 @@ for (const id of ids) {
     }
   }
 }
-writeFileSync(outFile, JSON.stringify(out, null, 1));
+save();
 console.log(`\n${out.filter(x => !x.error).length}/${ids.length} evaluated, ${out.filter(x => x.important).length} important -> ${outFile}`);
 process.exit(0);

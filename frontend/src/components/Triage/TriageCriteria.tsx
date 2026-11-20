@@ -9,7 +9,7 @@ const LABELS: Record<string, string> = {
 /** Why the importance rubric (card #239) flagged an email: each "yes" with its quote. */
 export function TriageCriteria({ item }: { item: Pick<TriageResult, 'criteria' | 'prompt_version' | 'model' | 'status'> }) {
   if (!item.criteria) return null
-  let parsed: Record<string, TriageCriterion | string | null>
+  let parsed: Record<string, any>
   try { parsed = JSON.parse(item.criteria) } catch { return null }
   const yes = Object.entries(LABELS)
     .map(([key, label]) => ({ key, label, c: parsed[key] as TriageCriterion | undefined }))
@@ -29,6 +29,16 @@ export function TriageCriteria({ item }: { item: Pick<TriageResult, 'criteria' |
           )}
         </div>
       ))}
+      {parsed.score && (
+        <div style={{ fontSize: 11, color: 'var(--text-3)', margin: '2px 0' }}
+          title="Pontszám a determinisztikus jelekből (card #246): 10 pont = 1 log-odds">
+          <b style={{ fontWeight: 600 }}>Pontszám: {parsed.score.points}</b>
+          {' '}({Math.round(parsed.score.probability * 100)}% eséllyel fontos)
+          {(parsed.score.breakdown || []).slice(0, 5).map((b: { key: string; label: string; points: number }) => (
+            <span key={b.key} style={{ marginLeft: 8 }}>{b.points > 0 ? '+' : ''}{b.points} {b.label}</span>
+          ))}
+        </div>
+      )}
       <div style={{ fontSize: 10.5, color: 'var(--text-4)' }}>
         {item.prompt_version}{item.model ? ` · ${item.model}` : ''}
       </div>
