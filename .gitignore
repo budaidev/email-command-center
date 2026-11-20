@@ -39,3 +39,4 @@ logs/
 backend/data/backtests/
 backend/data/*.json
 *.bak-*
+backend/data/llm-checks/
