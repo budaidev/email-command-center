@@ -110,6 +110,7 @@ Triage → Workbench → "Döntési szabályok" (`TriageDecisionRules.tsx`, API 
 - **Tudni akarom**: `important = 0 AND want_to_know = 1`. Set by `want_to_know` rules (no LLM call), or by the LLM once the prompt returns `want_to_know` (the v1 prompt does not: NULL).
 - **Bizonytalan**: the LLM decided and the signal score contradicts it by 10+ points (at most 15). A draft score model scores every email (stored in `criteria.score`) without deciding; only an active one decides.
 - **Fineract**: everything about Apache Fineract (subject or sender contains "fineract", `list_id_value` e.g. `dev.fineract.apache.org`, or `github_repo` e.g. `apache/fineract`) is taken out of the three lists above and shown on its own tab: important, want_to_know and unsure by default, every undecided one with `?all=1`. "Mind láttam" marks the shown page seen (`POST /api/review/bulk`).
+- Due date: `services/due.js` guesses a deadline from the email text without an LLM (Hungarian/English date forms near deadline or appointment words; `11.17.` without a year takes the email's year) and prefills the TODO's due date.
 - Undo deletes the `email_review` row(s); a created Vikunja task stays.
 
 Signals v4 added `list_id_value` and `github_repo` (from the subject's `[owner/repo]`); v3 added `kw_security` (body+subject) and `kw_verification_code` (subject only: "OTP" in bodies is a bank). Draft rules "Biztonsági riasztás" (want_to_know) and "Ellenőrző kód" (not_important) run before HARD v1 (`sort_order`).

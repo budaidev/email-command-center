@@ -131,7 +131,7 @@ function ReviewCard({ item, list, onDone, onError }: {
 }) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(item.suggested_task || item.subject)
-  const [due, setDue] = useState('')
+  const [due, setDue] = useState(item.due_guess || '')
   const [taskOpen, setTaskOpen] = useState(list !== 'know' && (list !== 'fineract' || item.important))
   const decideM = useMutation({
     mutationFn: (decision: 'todo' | 'dismissed' | 'seen') =>
@@ -176,7 +176,8 @@ function ReviewCard({ item, list, onDone, onError }: {
           <>
             <input style={input} value={title} onChange={e => setTitle(e.target.value)} placeholder="Feladat címe"
               onKeyDown={e => { if (e.key === 'Enter' && title.trim()) decideM.mutate('todo') }} />
-            <input type="date" style={{ ...input, flex: 'none', minWidth: 0 }} value={due} onChange={e => setDue(e.target.value)} title="Határidő (nem kötelező)" />
+            <input type="date" style={{ ...input, flex: 'none', minWidth: 0 }} value={due} onChange={e => setDue(e.target.value)} title={item.due_guess ? 'Határidő: a levélből olvastam ki, ellenőrizd' : 'Határidő (nem kötelező)'} />
+            {item.due_guess && due === item.due_guess && <span style={{ fontSize: 11, color: 'var(--text-4)' }}>a levélből</span>}
             <button style={primary} disabled={busy || !title.trim()} onClick={() => decideM.mutate('todo')}>
               {busy ? <Loader2 size={13} className="spin" /> : <CheckSquare size={13} />} TODO-ba
             </button>

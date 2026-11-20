@@ -491,7 +491,7 @@ export interface DomainCategory { domain: string; category: string; emails: numb
 export type ReviewList = 'todo' | 'know' | 'unsure' | 'fineract'
 export interface ReviewItem {
   id: string; subject: string; sender_name: string | null; sender_email: string; date: string; snippet: string | null;
-  important: boolean; want_to_know: boolean | null; why: string | null; suggested_task: string | null;
+  important: boolean; want_to_know: boolean | null; why: string | null; suggested_task: string | null; due_guess: string | null;
   action_type: string | null; kind: string | null; decided_by: 'rule' | 'score' | 'llm';
   prompt_version: string | null; model: string | null;
   score: { points: number; probability: number; breakdown: { key: string; label: string; points: number }[] } | null;

@@ -17,6 +17,7 @@
 
 import db from '../db.js';
 import { createTask } from './vikunja.js';
+import { guessDue } from './due.js';
 
 const APP_URL = process.env.APP_URL || 'https://email.home.budai.dev';
 // Points (signal score) beyond which the score clearly contradicts the LLM.
@@ -65,7 +66,7 @@ export function list(name, { limit = 100, all = false } = {}) {
   if (!WHERE[name]) throw Object.assign(new Error(`unknown list ${name}`), { status: 400 });
   const n = name === 'unsure' ? UNSURE_LIMIT : Math.min(Number(limit) || 100, 500);
   const where = all && ALL[name] ? ALL[name] : WHERE[name];
-  const rows = db.prepare(`SELECT e.id, e.subject, e.sender_name, e.sender_email, e.date, e.snippet,
+  const rows = db.prepare(`SELECT e.id, e.subject, e.sender_name, e.sender_email, e.date, e.snippet, e.body_text,
       t.important, t.want_to_know, t.reason, t.suggested_task, t.action_type, t.model, t.prompt_version, t.criteria
     ${BASE} AND (${where}) ORDER BY e.date DESC LIMIT ?`).all(n);
   return rows.map(r => {
@@ -77,6 +78,8 @@ export function list(name, { limit = 100, all = false } = {}) {
     return {
       id: r.id, subject: r.subject, sender_name: r.sender_name, sender_email: r.sender_email, date: r.date, snippet: r.snippet,
       important: !!r.important, want_to_know: r.want_to_know === null ? null : !!r.want_to_know,
+      // Deadline read from the email (no LLM), to prefill the task's due date.
+      due_guess: r.important ? guessDue(`${r.subject || ''}\n${r.body_text || r.snippet || ''}`, r.date) : null,
       why: r.reason, suggested_task: r.suggested_task, action_type: r.action_type, kind: c.kind || null,
       decided_by: r.model === 'rules' ? 'rule' : r.model === 'signal-score' ? 'score' : 'llm',
       prompt_version: r.prompt_version, model: r.model,
