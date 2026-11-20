@@ -497,6 +497,20 @@ export interface ReviewItem {
   score: { points: number; probability: number; breakdown: { key: string; label: string; points: number }[] } | null;
   evidence: { criterion: string; quote: string; found: boolean | null }[];
 }
+export type Verdict = 'important' | 'want_to_know' | 'not_important'
+export interface EmailFeedback {
+  email_id: string; predicted: Verdict | null; why: string | null; prompt_version: string | null
+  feedback: { verdict: Verdict; note: string | null; created_at: string } | null
+}
+export interface FeedbackLabel {
+  email_id: string; verdict: Verdict; note: string | null; predicted: Verdict | null; prompt_version: string | null
+  model: string | null; source: string; at: string; subject: string | null; sender_email: string; why: string | null; kind: 'explicit' | 'implicit'
+}
+export interface FeedbackReport {
+  since: string; n: number; judged: number; agree: number; explicit: number
+  matrix: Record<Verdict, Record<Verdict, number>>; by_version: Record<string, { n: number; agree: number }>
+  mismatches: FeedbackLabel[]; notes: FeedbackLabel[]
+}
 export interface ReviewCounts { todo: number; know: number; unsure: number; fineract: number; fineract_all: number; decided: Record<string, number> }
 
 // ─── Points per signal (card #246) ───
@@ -744,4 +758,11 @@ export const api = {
   decideReview: (emailId: string, body: { list: ReviewList; decision: 'todo' | 'dismissed' | 'seen'; title?: string; due?: string }) =>
     apiRequest<{ email_id: string; decision: string; task_id: string | null }>(`/review/${emailId}`, { method: 'POST', body }),
   undoReview: (emailId: string) => apiRequest<{ email_id: string }>(`/review/${emailId}`, { method: 'DELETE' }),
+  getFeedback: (emailId: string) => apiRequest<EmailFeedback>(`/feedback/${emailId}`),
+  giveFeedback: (emailId: string, body: { verdict: Verdict; note?: string; list?: ReviewList }) =>
+    apiRequest<EmailFeedback>(`/feedback/${emailId}`, { method: 'POST', body }),
+  removeFeedback: (emailId: string) => apiRequest<EmailFeedback>(`/feedback/${emailId}`, { method: 'DELETE' }),
+  getFeedbackReport: (days = 30) => apiRequest<FeedbackReport>(`/feedback/report?days=${days}`),
+  suggestFromFeedback: (days = 30) =>
+    apiRequest<{ model: string; cases: number; text: string }>('/feedback/suggest', { method: 'POST', body: { days } }),
 };

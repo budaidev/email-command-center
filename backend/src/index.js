@@ -26,6 +26,7 @@ import { triageEmails } from './services/triage.js';
 import rulesRouter from './routes/rules.js';
 import scoringRouter from './routes/scoring.js';
 import reviewRouter from './routes/review.js';
+import feedbackRouter from './routes/feedback.js';
 import pipelineRouter from './routes/pipeline.js';
 import { syncAll, startAllIdleWatchers, stopAllIdleWatchers } from './services/sync.js';
 import { generateYesterdayDigest } from './services/daily-digest.js';
@@ -51,6 +52,7 @@ app.use('/api/triage', triageRouter);
 app.use('/api/rules', rulesRouter);
 app.use('/api/scoring', scoringRouter);
 app.use('/api/review', reviewRouter);
+app.use('/api/feedback', feedbackRouter);
 app.use('/api/pipeline', pipelineRouter);
 
 app.get('/api/health', (req, res) => {

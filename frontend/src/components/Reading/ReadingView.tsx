@@ -17,6 +17,7 @@ import { useSummary } from '../../hooks/useSummary'
 import { Avatar } from '../shared/Avatar'
 import { Kbd } from '../shared/Kbd'
 import { CreateTaskFromEmail } from './CreateTaskFromEmail'
+import { EmailVerdict } from '../Feedback/EmailVerdict'
 
 /** Parse the markdown summary into structured sections */
 function parseSummary(raw: string): { tldr: string; sections: { title: string; items: string[] }[] } {
@@ -484,6 +485,8 @@ export function ReadingView() {
         >
           {email.subject}
         </h1>
+
+        <EmailVerdict emailId={email.id} />
 
         {/* Sender row */}
         <div

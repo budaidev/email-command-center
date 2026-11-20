@@ -4,7 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { CheckSquare, X, Eye, Loader2, ExternalLink, Undo2 } from 'lucide-react'
 import { api } from '../../api/client'
-import type { ReviewItem, ReviewList } from '../../api/client'
+import type { ReviewItem, ReviewList, Verdict } from '../../api/client'
+import { FeedbackButton, VerdictFeedbackForm, VERDICT_LABEL } from '../Feedback/VerdictFeedback'
+import { FeedbackReportView } from '../Feedback/FeedbackReportView'
 
 // Card #242: what the owner still has to look at. Important emails become GTD
 // tasks (Vikunja inbox) or are dismissed; "want to know" ones are marked seen;
@@ -32,27 +34,33 @@ const CRITERION: Record<string, string> = {
 const BY: Record<string, string> = { rule: 'szabály', score: 'pontozás', llm: 'LLM' }
 
 export function ReviewView() {
-  const [tab, setTab] = useState<ReviewList>('todo')
+  const [tab, setTab] = useState<ReviewList | 'feedback'>('todo')
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const counts = useQuery({ queryKey: ['review-counts'], queryFn: api.getReviewCounts, refetchInterval: 60_000 })
   const [showAll, setShowAll] = useState(false)
   const all = tab === 'fineract' && showAll
-  const items = useQuery({ queryKey: ['review', tab, all], queryFn: () => api.getReviewList(tab, all), refetchInterval: 60_000 })
-  const [last, setLast] = useState<{ ids: string[]; subject: string; text: string } | null>(null)
+  const list: ReviewList = tab === 'feedback' ? 'todo' : tab
+  const items = useQuery({ queryKey: ['review', tab, all], queryFn: () => api.getReviewList(list, all), refetchInterval: 60_000, enabled: tab !== 'feedback' })
+  const [last, setLast] = useState<{ ids: string[]; subject: string; text: string; feedback?: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['review'] })
     qc.invalidateQueries({ queryKey: ['review-counts'] })
+    qc.invalidateQueries({ queryKey: ['feedback-report'] })
   }
   const undoM = useMutation({
-    mutationFn: (ids: string[]) => api.undoReviewMany(ids),
+    mutationFn: async (l: { ids: string[]; feedback?: boolean }) => {
+      if (l.feedback) await Promise.all(l.ids.map(id => api.removeFeedback(id)))
+      return api.undoReviewMany(l.ids)
+    },
     onSuccess: () => { setLast(null); refresh() },
     onError: (e: Error) => setError(e.message),
   })
 
   const bulkM = useMutation({
-    mutationFn: (ids: string[]) => api.decideReviewMany(ids, tab, 'seen'),
+    mutationFn: (ids: string[]) => api.decideReviewMany(ids, list, 'seen'),
     onSuccess: r => { setLast({ ids: r.ids, subject: `${r.ids.length} levél`, text: 'Láttam' }); setError(null); refresh() },
     onError: (e: Error) => setError(e.message),
   })
@@ -79,7 +87,14 @@ export function ReviewView() {
               </button>
             )
           })}
+          <span style={{ flex: 1 }} />
+          <button onClick={() => setTab('feedback')} style={{
+            padding: '8px 12px', fontSize: 13, fontWeight: tab === 'feedback' ? 600 : 500, background: 'transparent', border: 'none',
+            borderBottom: `2px solid ${tab === 'feedback' ? 'var(--accent)' : 'transparent'}`, color: tab === 'feedback' ? 'var(--text)' : 'var(--text-3)',
+            cursor: 'pointer', marginBottom: -1,
+          }}>Visszajelzések</button>
         </div>
+        {tab === 'feedback' ? <FeedbackReportView onOpen={id => navigate(`/email/${id}`)} /> : <>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--text-3)', marginBottom: 14 }}>
           <span style={{ flex: 1 }}>{TABS.find(t => t.key === tab)!.hint}</span>
           {tab === 'fineract' && (
@@ -98,7 +113,7 @@ export function ReviewView() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginBottom: 12, fontSize: 12,
             background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 8 }}>
             <span style={{ flex: 1 }}>{last.text}: <b>{last.subject}</b></span>
-            <button style={btn} onClick={() => undoM.mutate(last.ids)} disabled={undoM.isPending}><Undo2 size={13} /> Visszavon</button>
+            <button style={btn} onClick={() => undoM.mutate(last)} disabled={undoM.isPending}><Undo2 size={13} /> Visszavon</button>
           </div>
         )}
         {error && (
@@ -116,19 +131,23 @@ export function ReviewView() {
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {items.data?.map(item => (
-            <ReviewCard key={item.id} item={item} list={tab}
-              onDone={(text) => { setLast({ ids: [item.id], subject: item.subject, text }); setError(null); refresh() }}
+            <ReviewCard key={item.id} item={item} list={list}
+              onDone={(text, feedback) => { setLast({ ids: [item.id], subject: item.subject, text, feedback }); setError(null); refresh() }}
               onError={setError} />
           ))}
         </div>
+        </>}
       </div>
     </div>
   )
 }
 
 function ReviewCard({ item, list, onDone, onError }: {
-  item: ReviewItem; list: ReviewList; onDone: (text: string) => void; onError: (msg: string) => void
+  item: ReviewItem; list: ReviewList; onDone: (text: string, feedback?: boolean) => void; onError: (msg: string) => void
 }) {
+  const predicted: Verdict = item.important ? 'important' : item.want_to_know ? 'want_to_know' : 'not_important'
+  const [fbOpen, setFbOpen] = useState(false)
+  const [fbSaved, setFbSaved] = useState(false)
   const navigate = useNavigate()
   const [title, setTitle] = useState(item.suggested_task || item.subject)
   const [due, setDue] = useState(item.due_guess || '')
@@ -187,8 +206,19 @@ function ReviewCard({ item, list, onDone, onError }: {
         )}
         {list === 'know' || (list === 'fineract' && !item.important)
           ? <button style={list === 'know' && !taskOpen ? primary : btn} disabled={busy} onClick={() => decideM.mutate('seen')}><Eye size={13} /> Láttam</button>
-          : <button style={btn} disabled={busy} onClick={() => decideM.mutate('dismissed')}><X size={13} /> Nem kell</button>}
+          : <button style={btn} disabled={busy} onClick={() => decideM.mutate('dismissed')} title="Nem kell rá feladat (a besorolás attól még lehet jó)"><X size={13} /> Nem kell</button>}
+        <span style={{ flex: 1 }} />
+        {fbSaved && <span style={{ fontSize: 11, color: 'var(--text-4)' }}>visszajelzés mentve</span>}
+        <FeedbackButton active={fbOpen} onClick={() => setFbOpen(v => !v)} />
       </div>
+      {fbOpen && (
+        <VerdictFeedbackForm emailId={item.id} predicted={predicted} list={list} onError={onError} onCancel={() => setFbOpen(false)}
+          onSaved={(_r, verdict) => {
+            setFbOpen(false)
+            if (verdict === 'important') { setFbSaved(true); setTaskOpen(true) }
+            else onDone(`Átsorolva: ${VERDICT_LABEL[verdict]}`, true)
+          }} />
+      )}
     </div>
   )
 }
