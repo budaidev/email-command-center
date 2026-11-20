@@ -85,7 +85,15 @@ docker exec email-command-center-backend node --env-file=/app/.env src/scripts/b
 - `--compare` gives the confidence tiers: sure (both models agree, all quotes found), likely (agree, a quote missing), doubtful (disagree).
 - cli-proxy returns 500 on its short-term limit and LiteLLM then cools the route for 60 s; the script runs one call at a time and waits 70 s on 429/500. `email-llm-strong` (GPT-6.2 Sol) is the second model.
 
-## Network
+## Deterministic signals (card #246)
+
+`services/signals.js`: facts about each email computed without an LLM, stored in `email_signals` (JSON, `SIGNALS_VERSION`). `prepareEmails` (called by the importance evaluation, i.e. right after each sync) fetches the raw message once for emails missing a body or current signals, and stores both. Backfill: `src/scripts/backfill-signals.js`. Measure: `python3 scripts/signal_report.py` (each signal and candidate hard rule against the owner's labels, plus coverage of all mail).
+
+- Headers come from `imap.fetchBodies` meta. mailparser folds `List-*` headers into one structured `list` header: read that, not `list-unsubscribe`.
+- `OWNER_ADDRESSES` in `.env`: the owner's addresses (all Gmail accounts land in one mailbox).
+- Sender history (`owner_wrote_to_sender_before`, `owner_replied_in_thread_before`) comes from `/app/mailstate/sent_index.jsonl`, header-only records of the owner's sent Gmail mail written by `mailserver/config/gmail_sync.py` (mounted read-only from `mailserver/mail-state/lib-fetchmail`). Only mail sent before the email's date counts; whether the owner later replied must never be a signal.
+- Domain categories: `src/config/signal-domains.js`, a proposal for the owner to edit.
+- No hard rule decides anything in production yet.
 
 Joined `paperless-ai-dev_paperless-net` (external) instead of creating its own bridge — the NAS Docker subnet pool was full when the project was added. If recreating from scratch and you need a fresh bridge, free a subnet first or stay on the shared network.
 
