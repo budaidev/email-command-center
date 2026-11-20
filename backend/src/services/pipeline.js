@@ -229,7 +229,7 @@ async function scoreStep(emailIds, config) {
         evaluated ? 'evaluated' : 'not_evaluated',
         evaluated ? null : (ev?.error || 'No AI answer'),
         ok ? (ev.important ? 1 : 0) : null,
-        ok ? JSON.stringify({ ...ev.criteria, kind: ev.kind, ...(ev.score ? { score: ev.score } : {}) }) : null,
+        ok ? JSON.stringify({ ...ev.criteria, kind: ev.kind, ...(ev.due ? { due: ev.due } : {}), ...(ev.score ? { score: ev.score } : {}) }) : null,
         aiEnabled ? ((ok && ev.prompt_version) || promptVersion) : null,
         ok ? (ev.want_to_know === true ? 1 : ev.want_to_know === false ? 0 : null) : null,
       );

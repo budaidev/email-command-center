@@ -68,6 +68,7 @@ The AI part of the triage score is three yes/no criteria with verbatim evidence 
 - **One call per email**, 3 in parallel. Each is a Langfuse trace named `ecc-importance` with tags `app:email-command-center`, `prompt:ecc-importance:vN` and metadata `email_id`, `message_id`, `prompt_version`. LiteLLM's OTEL callback does not set Langfuse's own prompt link or trace id; filter on those metadata/tags.
 - **Bodies**: the sync stores no body. `ensureBodies` fetches missing bodies from the local mailserver before evaluating and saves them in `emails.body_text`. Before 2026-11-18 the AI saw only sender and subject.
 - `triage_results.criteria` (JSON with `evidence_found`: false when the quote is not in the email), `important`, `prompt_version`. The Today card shows them (`TriageCriteria.tsx`).
+- **Prompt v2** (production since 2026-11-20) also returns `want_to_know` (forced false when important) and `due` (the stated deadline, `YYYY-MM-DD`, kept only when important; stored as `criteria.due`). It counts personal mail from real people (recruiters, accountant, teachers), portal "new document" notices, forwarded bills and parcel pickups as important, and code-hosting/list notifications as at most want_to_know. It was written from v1's misses on the same 70 labels, so its backtest score (Luna 98.6%, Sol 100% on important) is optimistic; the Átnézés decisions are the fresh check.
 - `runBacktest` (Triage page) still uses the old 0-50 prompt. The real backtest is `src/scripts/backtest.js` (below).
 
 ## Backtest (card #241)
@@ -107,10 +108,10 @@ Triage → Workbench → "Döntési szabályok" (`TriageDecisionRules.tsx`, API 
 "Átnézés" page (`/review`, `components/Review/ReviewView.tsx`, API `/api/review`, `services/review.js`, table `email_review`). Lists emails evaluated by the new pipeline (`prompt_version` set) that have no decision and no linked task:
 
 - **Teendő**: `important = 1`. "TODO-ba" creates a Vikunja task in the GTD inbox (project 1) with the why and a link back to the email, and sets `emails.gtd_task_id`; "Nem kell" dismisses.
-- **Tudni akarom**: `important = 0 AND want_to_know = 1`. Set by `want_to_know` rules (no LLM call), or by the LLM once the prompt returns `want_to_know` (the v1 prompt does not: NULL).
+- **Tudni akarom**: `important = 0 AND want_to_know = 1`. Set by `want_to_know` rules (no LLM call), or by the LLM (prompt v2 on; v1 results have NULL).
 - **Bizonytalan**: the LLM decided and the signal score contradicts it by 10+ points (at most 15). A draft score model scores every email (stored in `criteria.score`) without deciding; only an active one decides.
 - **Fineract**: everything about Apache Fineract (subject or sender contains "fineract", `list_id_value` e.g. `dev.fineract.apache.org`, or `github_repo` e.g. `apache/fineract`) is taken out of the three lists above and shown on its own tab: important, want_to_know and unsure by default, every undecided one with `?all=1`. "Mind láttam" marks the shown page seen (`POST /api/review/bulk`).
-- Due date: `services/due.js` guesses a deadline from the email text without an LLM (Hungarian/English date forms near deadline or appointment words; `11.17.` without a year takes the email's year) and prefills the TODO's due date.
+- Due date: `services/due.js` guesses a deadline from the email text without an LLM (Hungarian/English date forms near deadline or appointment words; `11.17.` without a year takes the email's year) and prefills the TODO's due date; the LLM's `criteria.due` (prompt v2) wins when present.
 - Undo deletes the `email_review` row(s); a created Vikunja task stays.
 
 Signals v4 added `list_id_value` and `github_repo` (from the subject's `[owner/repo]`); v3 added `kw_security` (body+subject) and `kw_verification_code` (subject only: "OTP" in bodies is a bank). Draft rules "Biztonsági riasztás" (want_to_know) and "Ellenőrző kód" (not_important) run before HARD v1 (`sort_order`).

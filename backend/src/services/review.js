@@ -79,7 +79,8 @@ export function list(name, { limit = 100, all = false } = {}) {
       id: r.id, subject: r.subject, sender_name: r.sender_name, sender_email: r.sender_email, date: r.date, snippet: r.snippet,
       important: !!r.important, want_to_know: r.want_to_know === null ? null : !!r.want_to_know,
       // Deadline read from the email (no LLM), to prefill the task's due date.
-      due_guess: r.important ? guessDue(`${r.subject || ''}\n${r.body_text || r.snippet || ''}`, r.date) : null,
+      // The LLM's date (prompt v2) first, else the pattern match on the text.
+      due_guess: r.important ? (c.due || guessDue(`${r.subject || ''}\n${r.body_text || r.snippet || ''}`, r.date)) : null,
       why: r.reason, suggested_task: r.suggested_task, action_type: r.action_type, kind: c.kind || null,
       decided_by: r.model === 'rules' ? 'rule' : r.model === 'signal-score' ? 'score' : 'llm',
       prompt_version: r.prompt_version, model: r.model,

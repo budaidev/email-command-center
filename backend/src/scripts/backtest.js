@@ -67,6 +67,9 @@ function report(rows, predOf) {
   }
   // Flagged emails the owner only "wants to know about": the cost of a false alarm.
   const flagged = rows.filter(x => predOf(x, 'important'));
+  // v2 on: the want_to_know answer against the label (on emails labelled not important).
+  const wtk = rows.filter(x => !x.truth.important && typeof predOf(x, 'want_to_know') === 'boolean');
+  if (wtk.length) out.want_to_know = metrics(wtk.map(x => [predOf(x, 'want_to_know'), !!x.truth.want_to_know]));
   out.flagged_want_to_know_only = flagged.filter(x => !x.truth.important && x.truth.want_to_know).length;
   return out;
 }
@@ -79,6 +82,7 @@ function printTable(title, m) {
     const p = v => (v === null ? '   -  ' : `${v.toFixed(1).padStart(5)}%`);
     console.log(`${f.padEnd(22)}${String(x.n).padStart(3)}  ${p(x.recall)}   ${p(x.precision)}    ${p(x.accuracy)}  ${String(x.tp).padStart(3)} ${String(x.fp).padStart(3)} ${String(x.fn).padStart(3)}`);
   }
+  if (m.want_to_know) console.log(`want_to_know (not-important emails) n=${m.want_to_know.n} recall ${m.want_to_know.recall}% precision ${m.want_to_know.precision}% fp ${m.want_to_know.fp} fn ${m.want_to_know.fn}`);
   if (m.flagged_want_to_know_only !== undefined) console.log(`flagged but only "want to know": ${m.flagged_want_to_know_only}`);
 }
 
@@ -172,7 +176,7 @@ async function runBacktest(o) {
             await sleep(RETRY_WAIT_MS);
           }
         }
-        row.pred = { important: ev.important, ...Object.fromEntries(CRITERIA.map(c => [c, ev.criteria[c].answer])) };
+        row.pred = { important: ev.important, ...Object.fromEntries(CRITERIA.map(c => [c, ev.criteria[c].answer])), want_to_know: ev.want_to_know, due: ev.due || null };
         row.evidence_found = Object.fromEntries(CRITERIA.map(c => [c, ev.criteria[c].evidence_found]));
         row.why = ev.why;
       } catch (err) {

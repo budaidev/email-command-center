@@ -131,7 +131,7 @@ export async function triageEmails(emailIds, force = false) {
         e.id, Math.max(0, Math.min(100, rr.ruleScore + aiScore)), rr.ruleScore, aiScore,
         JSON.stringify(rr.matchedRules), rr.ruleActionType || ev.action_type || 'none',
         ev.why, ev.suggested_task, ev.model || model,
-        ev.important ? 1 : 0, JSON.stringify({ ...ev.criteria, kind: ev.kind, ...(ev.score ? { score: ev.score } : {}) }), ev.prompt_version || promptVersion,
+        ev.important ? 1 : 0, JSON.stringify({ ...ev.criteria, kind: ev.kind, ...(ev.due ? { due: ev.due } : {}), ...(ev.score ? { score: ev.score } : {}) }), ev.prompt_version || promptVersion,
         ev.want_to_know === true ? 1 : ev.want_to_know === false ? 0 : null,
       );
       totalCount++;

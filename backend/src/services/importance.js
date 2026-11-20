@@ -46,7 +46,9 @@ function parseAnswer(raw, email) {
     criteria,
     kind: KINDS.has(raw.kind) ? raw.kind : null,
     // Only prompts from v2 on ask for it; null means "not asked".
-    want_to_know: typeof raw.want_to_know === 'boolean' ? raw.want_to_know : null,
+    want_to_know: typeof raw.want_to_know === 'boolean' ? (raw.want_to_know && !important) : null,
+    // v2: the deadline the email states; only kept when important and a real date.
+    due: important && typeof raw.due === 'string' && /^20\d\d-\d\d-\d\d$/.test(raw.due) && !Number.isNaN(Date.parse(raw.due)) ? raw.due : null,
     why: typeof raw.why === 'string' ? raw.why.slice(0, 400) : null,
     action_type: important && ACTIONS.has(raw.action_type) ? raw.action_type : 'none',
     suggested_task: important && typeof raw.suggested_task === 'string' ? raw.suggested_task.slice(0, 200) : null,
