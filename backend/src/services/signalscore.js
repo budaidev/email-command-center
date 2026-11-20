@@ -222,9 +222,15 @@ export function scoreEmail(model, email, signals, points = pointsOf(model)) {
 export function scoreForPipeline(emails) {
   const m = getModel();
   const out = new Map();
-  if (!m || m.status !== 'active') return out;
+  if (!m || m.status === 'off') return out;
   const points = pointsOf(m);
-  for (const e of emails) if (e.signals) out.set(e.id, scoreEmail(m, e, e.signals, points));
+  // A draft model only scores (stored with the result, used by the review list's
+  // "unsure" tab); only an active one decides.
+  for (const e of emails) {
+    if (!e.signals) continue;
+    const s = scoreEmail(m, e, e.signals, points);
+    out.set(e.id, m.status === 'active' ? s : { ...s, verdict: null });
+  }
   return out;
 }
 

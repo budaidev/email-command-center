@@ -13,7 +13,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import db from '../db.js';
 import { fetchBodies } from './imap.js';
 
-export const SIGNALS_VERSION = 2; // 2: owner's history from the sent-mail index
+export const SIGNALS_VERSION = 3; // 2: owner's history from the sent-mail index; 3: security alert, verification code
 
 
 const OWNER = new Set((process.env.OWNER_ADDRESSES || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
@@ -55,6 +55,10 @@ const KEYWORDS = {
   deadline: /határid|lejár|deadline|due date|legkésőbb|until \d|by (monday|tuesday|wednesday|thursday|friday)/i,
   appointment: /időpont|találkoz|egyeztet|megbeszél|fogadóór|szülői értekezlet|vizsga|tárgyalás|interjú|interview|meeting|appointment|reschedul|calendar invite|meghívó.*(\d{1,2}:\d{2})|\b\d{1,2}:\d{2}\b.*(óra|kor)/i,
   reply_request: /kérlek,? (jelezd|írd|válaszolj|küldd)|kérem,? (jelezze|írja|válaszoljon|küldje)|várom (a )?válasz|visszajelz|let me know|please (confirm|reply|respond|advise|let)|could you|can you|would you|tudnál|tudnád|tudná|\?\s*$/im,
+  // Account security notices: "was it you?" mail, mostly the owner's own sign-ins.
+  security: /security alert|biztonsági (riasztás|figyelmeztetés|értesítés)|new sign-?in|new login|sign-?in attempt|új bejelentkezés|bejelentkezés(t)? észlelt|unusual (activity|sign-?in)|szokatlan|new (trusted )?device|új eszköz|account protection|fiókvédelem|password (was )?(changed|reset)|jelszó(t)? (megváltozott|módosít)|was this you|te voltál/i,
+  // Subject only: in bodies "OTP" is also a bank and "verify" is in every footer.
+  verification_code: /verification code|security code|one-?time (passcode|password|code)|ellenőrző kód|megerősítő kód|egyszer használatos|verify your identity|is your .*code|kódod|bejelentkezési kód|login code|sign-?in code/i,
   unsubscribe_text: /leiratkoz|unsubscribe|hírlevél|newsletter|this email was sent to|you are receiving this/i,
 };
 
@@ -140,6 +144,8 @@ export function computeSignals(email, meta) {
     kw_deadline: has(KEYWORDS.deadline),
     kw_appointment: has(KEYWORDS.appointment),
     kw_reply_request: has(KEYWORDS.reply_request),
+    kw_security: has(KEYWORDS.security),
+    kw_verification_code: KEYWORDS.verification_code.test(subject),
     // Attachments
     att_pdf: atts.some(a => /pdf/i.test(a.contentType) || /\.pdf$/i.test(a.filename || '')),
     att_calendar: atts.some(a => /calendar|ics/i.test(a.contentType) || /\.ics$/i.test(a.filename || '')),

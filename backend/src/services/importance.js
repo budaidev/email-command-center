@@ -45,6 +45,8 @@ function parseAnswer(raw, email) {
     important,
     criteria,
     kind: KINDS.has(raw.kind) ? raw.kind : null,
+    // Only prompts from v2 on ask for it; null means "not asked".
+    want_to_know: typeof raw.want_to_know === 'boolean' ? raw.want_to_know : null,
     why: typeof raw.why === 'string' ? raw.why.slice(0, 400) : null,
     action_type: important && ACTIONS.has(raw.action_type) ? raw.action_type : 'none',
     suggested_task: important && typeof raw.suggested_task === 'string' ? raw.suggested_task.slice(0, 200) : null,
@@ -83,7 +85,7 @@ export const ensureBodies = prepareEmails;
  */
 export async function evaluateImportance(emails) {
   await prepareEmails(emails);
-  // Active decision rules (card #247): "not_important" ones answer without the LLM.
+  // Active decision rules (card #247): "not_important" and "want_to_know" ones answer without the LLM.
   const ruled = decideByRules(emails);
   // Then the points per signal (card #246), when that model is active: a score at
   // or below its low threshold also answers without the LLM.
@@ -93,7 +95,7 @@ export async function evaluateImportance(emails) {
   for (const e of emails) {
     const rule = ruled.get(e.id);
     const score = scores.get(e.id);
-    if (rule?.verdict === 'not_important') results.set(e.id, ruleAnswer(rule));
+    if (rule && rule.verdict !== 'important') results.set(e.id, ruleAnswer(rule));
     else if (!rule && score?.verdict === 'not_important') results.set(e.id, scoreAnswer(score));
     else forLlm.push(e);
   }
@@ -148,6 +150,7 @@ function ruleAnswer(rule) {
     important: false,
     criteria: Object.fromEntries(CRITERIA.map(c => [c, { answer: false, evidence: '', evidence_found: null }])),
     kind: null,
+    want_to_know: rule.verdict === 'want_to_know',
     why: `Szabály döntött: ${rule.name}`,
     action_type: 'none',
     suggested_task: null,

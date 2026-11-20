@@ -4,7 +4,8 @@
  * the LLM. Edited, backtested and activated in Triage > Workbench.
  *
  * A rule: { name, conditions: [{field, op, value}] (all must hold), verdict,
- * status }. verdict "not_important": the LLM is not called. verdict "important":
+ * status }. verdict "not_important": the LLM is not called. verdict "want_to_know":
+ * not important either (no LLM), but listed under "Tudni akarom" for review. verdict "important":
  * the LLM still runs (for the why and the task), its verdict is overridden.
  * Only status "active" rules run in the pipeline; the first match by sort_order wins.
  */
@@ -42,6 +43,8 @@ export const FIELDS = [
   ['kw_deadline', BOOL, 'Kulcsszó: határidő'],
   ['kw_appointment', BOOL, 'Kulcsszó: időpont / találkozó'],
   ['kw_reply_request', BOOL, 'Választ kér / kérdez'],
+  ['kw_security', BOOL, 'Biztonsági riasztás (új belépés, eszköz …)'],
+  ['kw_verification_code', BOOL, 'Ellenőrző / egyszeri kód'],
   ['att_pdf', BOOL, 'PDF csatolmány'],
   ['att_calendar', BOOL, 'Naptármeghívó csatolmány'],
   ['att_invoice', BOOL, 'Számla-csatolmány (fájlnév)'],
@@ -62,7 +65,7 @@ export const OPS = {
   number: ['gt', 'lt', 'equals'],
   boolset: ['any_true', 'none_true'], // value: comma-separated bool field keys
 };
-export const VERDICTS = ['not_important', 'important'];
+export const VERDICTS = ['not_important', 'want_to_know', 'important'];
 const FIELD = new Map(FIELDS.map(f => [f.key, f]));
 
 /** Values a rule sees: the stored signals, email fields, and the live domain category. */
@@ -262,6 +265,8 @@ export function backtestRule(rule) {
     fires: fired.length,
     coverage_pct: rows.length ? Math.round((1000 * fired.length) / rows.length) / 10 : 0,
     labelled: { total: labels.size, fires: firedLabelled.length, wrong: wrong.length, of_class: labelledOfClass,
+      // How many of the fired, labelled emails the owner marked "want to know" (the aim of a want_to_know rule).
+      want_to_know: firedLabelled.filter(e => labels.get(e.id).want_to_know).length,
       caught_pct: labelledOfClass ? Math.round((1000 * (firedLabelled.length - wrong.length)) / labelledOfClass) / 10 : null },
     wrong,
     llm: [...bySource.values()].sort((a, b) => b.evaluated - a.evaluated),

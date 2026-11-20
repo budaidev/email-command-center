@@ -15,6 +15,7 @@ const OP_LABEL: Record<string, string> = {
 }
 const VERDICT_LABEL: Record<string, string> = {
   not_important: 'Nem fontos — LLM nélkül',
+  want_to_know: 'Tudni akarom — LLM nélkül, az Átnézés listára',
   important: 'Fontos — az LLM is fut, a döntést felülírja',
 }
 const STATUS_LABEL: Record<string, string> = { draft: 'piszkozat', active: 'aktív', off: 'kikapcsolva' }
@@ -267,6 +268,11 @@ function BacktestResult({ r, conditions, fields }: { r: RuleBacktest; conditions
         <span style={{ fontSize: 12, color: ok ? 'var(--ok)' : 'var(--danger)' }}>
           Címkéiden: {r.labelled.fires} találat, <b>{r.labelled.wrong} hiba</b>
         </span>
+        {r.verdict === 'want_to_know' && (
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+            ebből „tudni akarom” címkéjű: {r.labelled.want_to_know ?? 0}
+          </span>
+        )}
         {r.labelled.caught_pct !== null && (
           <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
             a(z) {r.labelled.of_class} „{r.verdict === 'important' ? 'fontos' : 'nem fontos'}” címkéből {r.labelled.caught_pct}%-ot elkap

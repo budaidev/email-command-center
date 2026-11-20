@@ -97,14 +97,15 @@ export async function triageEmails(emailIds, force = false) {
 
   const upsert = db.prepare(`
     INSERT INTO triage_results (email_id, score, rule_score, ai_score, matched_rules, action_type, reason, suggested_task,
-                                model, status, error, important, criteria, prompt_version, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'evaluated', NULL, ?, ?, ?, datetime('now'))
+                                model, status, error, important, criteria, prompt_version, want_to_know, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'evaluated', NULL, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(email_id) DO UPDATE SET
       score = excluded.score, rule_score = excluded.rule_score, ai_score = excluded.ai_score,
       matched_rules = excluded.matched_rules, action_type = excluded.action_type,
       reason = excluded.reason, suggested_task = excluded.suggested_task,
       model = excluded.model, status = 'evaluated', error = NULL,
       important = excluded.important, criteria = excluded.criteria, prompt_version = excluded.prompt_version,
+      want_to_know = excluded.want_to_know,
       updated_at = datetime('now')
   `);
   // An email the LLM did not answer for: keep any earlier evaluation, otherwise record why.
@@ -131,6 +132,7 @@ export async function triageEmails(emailIds, force = false) {
         JSON.stringify(rr.matchedRules), rr.ruleActionType || ev.action_type || 'none',
         ev.why, ev.suggested_task, ev.model || model,
         ev.important ? 1 : 0, JSON.stringify({ ...ev.criteria, kind: ev.kind, ...(ev.score ? { score: ev.score } : {}) }), ev.prompt_version || promptVersion,
+        ev.want_to_know === true ? 1 : ev.want_to_know === false ? 0 : null,
       );
       totalCount++;
     }

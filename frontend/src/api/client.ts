@@ -473,11 +473,11 @@ export interface RuleEmailRef { id: string; subject: string; sender: string; dat
 export interface RuleLlmSource { source: string; evaluated: number; disagree: number; examples?: RuleEmailRef[] }
 export interface RuleBacktest {
   at: string; verdict: string; total_emails: number; fires: number; coverage_pct: number;
-  labelled: { total: number; fires: number; wrong: number; of_class: number; caught_pct: number | null };
+  labelled: { total: number; fires: number; wrong: number; of_class: number; caught_pct: number | null; want_to_know?: number };
   wrong?: RuleEmailRef[]; llm: RuleLlmSource[]; sample?: RuleEmailRef[];
 }
 export interface DecisionRule {
-  id: string; name: string; conditions: RuleCondition[]; verdict: 'not_important' | 'important';
+  id: string; name: string; conditions: RuleCondition[]; verdict: 'not_important' | 'want_to_know' | 'important';
   status: 'draft' | 'active' | 'off'; note: string | null; sort_order: number;
   last_backtest: RuleBacktest | null; created_at: string; updated_at: string;
 }
@@ -486,6 +486,18 @@ export interface RulesResponse {
   labels: { n: number; important: number | null; synced_at: string | null };
 }
 export interface DomainCategory { domain: string; category: string; emails: number }
+
+// ─── Review list (card #242) ───
+export type ReviewList = 'todo' | 'know' | 'unsure'
+export interface ReviewItem {
+  id: string; subject: string; sender_name: string | null; sender_email: string; date: string; snippet: string | null;
+  important: boolean; want_to_know: boolean | null; why: string | null; suggested_task: string | null;
+  action_type: string | null; kind: string | null; decided_by: 'rule' | 'score' | 'llm';
+  prompt_version: string | null; model: string | null;
+  score: { points: number; probability: number; breakdown: { key: string; label: string; points: number }[] } | null;
+  evidence: { criterion: string; quote: string; found: boolean | null }[];
+}
+export interface ReviewCounts { todo: number; know: number; unsure: number; decided: Record<string, number> }
 
 // ─── Points per signal (card #246) ───
 export interface ScoreFeature { learned: number; override: number | null; share: number }
@@ -724,4 +736,9 @@ export const api = {
     apiRequest<{ queued: number }>('/pipeline/run', { method: 'POST', body: params || {} }),
   getPipelineStatus: () =>
     apiRequest<PipelineStatus>('/pipeline/status'),
+  getReviewCounts: () => apiRequest<ReviewCounts>('/review/counts'),
+  getReviewList: (list: ReviewList) => apiRequest<ReviewItem[]>(`/review/${list}`),
+  decideReview: (emailId: string, body: { list: ReviewList; decision: 'todo' | 'dismissed' | 'seen'; title?: string; due?: string }) =>
+    apiRequest<{ email_id: string; decision: string; task_id: string | null }>(`/review/${emailId}`, { method: 'POST', body }),
+  undoReview: (emailId: string) => apiRequest<{ email_id: string }>(`/review/${emailId}`, { method: 'DELETE' }),
 };

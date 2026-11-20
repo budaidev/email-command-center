@@ -8,6 +8,7 @@ import {
   CheckSquare,
   Activity,
   Brain,
+  ListChecks,
   Settings,
   Sun,
   Moon,
@@ -99,6 +100,8 @@ export function NavRail() {
   })
 
   const unreadCount = emailData?.total ?? 0
+  const { data: review } = useQuery({ queryKey: ['review-counts'], queryFn: api.getReviewCounts, refetchInterval: 60_000 })
+  const reviewCount = review ? review.todo + review.know + review.unsure : 0
   const path = location.pathname
 
   return (
@@ -140,6 +143,13 @@ export function NavRail() {
           label="Today"
           active={path === '/'}
           onClick={() => navigate('/')}
+        />
+        <RailBtn
+          icon={<ListChecks size={17} strokeWidth={path === '/review' ? 2 : 1.75} />}
+          label="Átnézés"
+          active={path === '/review'}
+          onClick={() => navigate('/review')}
+          badge={reviewCount}
         />
         <RailBtn
           icon={<Inbox size={17} strokeWidth={path === '/inbox' ? 2 : 1.75} />}

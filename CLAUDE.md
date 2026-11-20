@@ -98,9 +98,20 @@ docker exec email-command-center-backend node --env-file=/app/.env src/scripts/b
 
 Triage → Workbench → "Döntési szabályok" (`TriageDecisionRules.tsx`, API `/api/rules`, `services/rules.js`, table `decision_rules`). Replaces the additive `scoring_rules` in the UI (that table and its pipeline code still exist, empty).
 
-- A rule: conditions over the signals and email fields (all must hold; `any_of` gives an OR over yes/no signals), a verdict and a status (draft/active/off). `not_important` rules answer without calling the LLM (`triage_results.prompt_version = "rule:<name>"`, model `rules`); `important` rules let the LLM run and override its verdict. Only active rules run; the first match by `sort_order` wins; emails without signals are never decided by a rule.
+- A rule: conditions over the signals and email fields (all must hold; `any_of` gives an OR over yes/no signals), a verdict and a status (draft/active/off). `not_important` and `want_to_know` rules answer without calling the LLM (`triage_results.prompt_version = "rule:<name>"`, model `rules`); `important` rules let the LLM run and override its verdict. Only active rules run; the first match by `sort_order` wins; emails without signals are never decided by a rule.
 - Backtest (button, `POST /api/rules/:id/backtest` or `/api/rules/backtest` for an unsaved draft): fires and errors on the owner's labels (`importance_labels`, synced from the Langfuse dataset with the "Címkék" button), coverage of all mail, disagreement with each LLM source (`data/backtests/*.json`, `data/llm-checks/*.json`, live `triage_results`), and a sample of hits. Activation is refused unless the exact saved definition was backtested; editing a rule clears its backtest.
 - Same numbers as `scripts/signal_report.py`.
+
+## Review list (card #242)
+
+"Átnézés" page (`/review`, `components/Review/ReviewView.tsx`, API `/api/review`, `services/review.js`, table `email_review`). Lists emails evaluated by the new pipeline (`prompt_version` set) that have no decision and no linked task:
+
+- **Teendő**: `important = 1`. "TODO-ba" creates a Vikunja task in the GTD inbox (project 1) with the why and a link back to the email, and sets `emails.gtd_task_id`; "Nem kell" dismisses.
+- **Tudni akarom**: `important = 0 AND want_to_know = 1`. Set by `want_to_know` rules (no LLM call), or by the LLM once the prompt returns `want_to_know` (the v1 prompt does not: NULL).
+- **Bizonytalan**: the LLM decided and the signal score contradicts it by 10+ points (at most 15). A draft score model scores every email (stored in `criteria.score`) without deciding; only an active one decides.
+- Undo deletes the `email_review` row; a created Vikunja task stays.
+
+Signals v3 added `kw_security` (body+subject) and `kw_verification_code` (subject only: "OTP" in bodies is a bank). Draft rules "Biztonsági riasztás" (want_to_know) and "Ellenőrző kód" (not_important) run before HARD v1 (`sort_order`).
 
 Joined `paperless-ai-dev_paperless-net` (external) instead of creating its own bridge — the NAS Docker subnet pool was full when the project was added. If recreating from scratch and you need a fresh bridge, free a subnet first or stay on the shared network.
 

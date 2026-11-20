@@ -8,6 +8,7 @@ import { RulesPage } from './components/Rules/RulesPage'
 import { TasksView } from './components/Tasks/TasksView'
 import { PulseView } from './components/Pulse/PulseView'
 import { TriageWorkbench } from './components/Triage/TriageWorkbench'
+import { ReviewView } from './components/Review/ReviewView'
 
 function AppShell() {
   const navigate = useNavigate()
@@ -35,6 +36,7 @@ function AppShell() {
           <Route path="/tasks" element={<TasksView />} />
           <Route path="/pulse" element={<PulseView />} />
           <Route path="/triage" element={<TriageWorkbench />} />
+          <Route path="/review" element={<ReviewView />} />
           <Route
             path="/email/:id"
             element={<ReadingView />}
