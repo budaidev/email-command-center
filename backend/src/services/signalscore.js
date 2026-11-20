@@ -47,26 +47,65 @@ export function featuresOf(email, signals) {
 
 const sigmoid = z => 1 / (1 + Math.exp(-z));
 
-/** Weighted L2-regularised logistic regression by gradient descent. */
-function fit(rows, { l2 = 0.02, iters = 3000, lr = 0.5 } = {}) {
+/**
+ * Weighted logistic regression with a light L2 penalty (a prior keeping rare
+ * features near 0), fitted by Newton's method: exact, no learning rate to tune.
+ */
+function fit(rows, { l2 = 1, iters = 30 } = {}) {
   const keys = FEATURES.map(f => f.key);
-  const w = Object.fromEntries(keys.map(k => [k, 0]));
-  let b = 0;
+  const d = keys.length + 1; // last = intercept
+  const X = rows.map(r => [...keys.map(k => (r.x[k] ? 1 : 0)), 1]);
+  // Normalise weights to sum to the row count, so the penalty means the same at any sampling.
   const W = rows.reduce((s, r) => s + r.weight, 0);
+  const wt = rows.map(r => (r.weight * rows.length) / W);
+  let beta = new Array(d).fill(0);
   for (let it = 0; it < iters; it++) {
-    const g = Object.fromEntries(keys.map(k => [k, 0]));
-    let gb = 0;
-    for (const r of rows) {
-      let z = b;
-      for (const k of keys) if (r.x[k]) z += w[k];
-      const err = (sigmoid(z) - r.y) * r.weight;
-      gb += err;
-      for (const k of keys) if (r.x[k]) g[k] += err;
-    }
-    b -= (lr * gb) / W;
-    for (const k of keys) w[k] -= lr * (g[k] / W + l2 * w[k]);
+    const g = new Array(d).fill(0);
+    const H = Array.from({ length: d }, () => new Array(d).fill(0));
+    rows.forEach((r, i) => {
+      const x = X[i];
+      let z = 0;
+      for (let j = 0; j < d; j++) z += x[j] * beta[j];
+      const p = sigmoid(z);
+      const a = wt[i] * (p - r.y);
+      const s = wt[i] * p * (1 - p);
+      for (let j = 0; j < d; j++) {
+        if (!x[j]) continue;
+        g[j] += a;
+        for (let k = 0; k < d; k++) if (x[k]) H[j][k] += s;
+      }
+    });
+    for (let j = 0; j < d - 1; j++) { g[j] += l2 * beta[j]; H[j][j] += l2; } // intercept not penalised
+    H[d - 1][d - 1] += 1e-6;
+    const step = solve(H, g);
+    let max = 0;
+    beta = beta.map((b, j) => { max = Math.max(max, Math.abs(step[j])); return b - step[j]; });
+    if (max < 1e-6) break;
   }
-  return { w, b };
+  return { w: Object.fromEntries(keys.map((k, j) => [k, beta[j]])), b: beta[d - 1] };
+}
+
+/** Solve A x = b (Gaussian elimination with partial pivoting). */
+function solve(A, b) {
+  const n = b.length;
+  const M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    const v = M[c][c] || 1e-12;
+    for (let r = c + 1; r < n; r++) {
+      const f = M[r][c] / v;
+      if (f) for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = M[r][n];
+    for (let k = r + 1; k < n; k++) s -= M[r][k] * x[k];
+    x[r] = s / (M[r][r] || 1e-12);
+  }
+  return x;
 }
 
 function teacherRows() {
